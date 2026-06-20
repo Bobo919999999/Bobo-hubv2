@@ -1,0 +1,104 @@
+-- [[ BOBO EXEC | JJS MACE & AUTO-BLOCK SUITE ]] --
+-- Custom optimized for Bobo's Mobile Combat (2026)
+
+getgenv().MaceMayhem = true
+getgenv().AutoBlock = true
+getgenv().AttackDistance = 12 -- Mace attack range
+getgenv().BlockDistance = 18  -- Range to start watching for enemy attacks
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Player = game.Players.LocalPlayer
+
+-- FUNCTION TO FIRE ACTIONS DIRECTLY VIA KNIT
+local function FireAction(actionName, state)
+    local args = {
+        [1] = actionName,
+        [2] = state or "Trigger"
+    }
+    ReplicatedStorage.Knit.Services.ActionService.RF.ExecuteAction:InvokeServer(unpack(args))
+end
+
+-- [[ 1. SMART AUTO-BLOCK LOOP ]] --
+task.spawn(function()
+    local isBlocking = false
+    while getgenv().AutoBlock do
+        task.wait(0.01) -- Ultra-fast polling for instant parry timing
+        pcall(function()
+            local char = Player.Character
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if not root then return end
+            
+            local enemyAttacking = false
+            
+            for _, enemy in pairs(game.Players:GetPlayers()) do
+                if enemy ~= Player and enemy.Character and enemy.Character:FindFirstChild("HumanoidRootPart") then
+                    local enemyRoot = enemy.Character.HumanoidRootPart
+                    local dist = (root.Position - enemyRoot.Position).Magnitude
+                    
+                    -- Only scan enemies within immediate danger zone
+                    if dist <= getgenv().BlockDistance then
+                        local enemyChar = enemy.Character
+                        
+                        -- Detects if the enemy is swinging, using a tool, or casting an ability
+                        if enemyChar:FindFirstChild("CombatTag") or 
+                           enemyChar:FindFirstChildOfClass("Tool") and enemyChar:FindFirstChildOfClass("Tool"):FindFirstChild("Active") or
+                           (enemyChar:FindFirstChild("Humanoid") and enemyChar.Humanoid.TargetPoint.Magnitude > 0 and enemyChar.Humanoid.MoveDirection.Magnitude == 0) then
+                            
+                            enemyAttacking = true
+                            break
+                        end
+                    end
+                end
+            end
+            
+            -- Toggle Shield Block State
+            if enemyAttacking and not isBlocking then
+                isBlocking = true
+                FireAction("Block", "Hold") -- Activates and holds your shield up
+                print("BOBO EXEC: Incoming attack detected! Shield Raised.")
+            elseif not enemyAttacking and isBlocking then
+                isBlocking = false
+                FireAction("Block", "Release") -- Lowers shield when safe
+                print("BOBO EXEC: Safe. Shield Lowered.")
+            end
+        end)
+    end
+end)
+
+-- [[ 2. MACE AGGRESSION LOOP ]] --
+task.spawn(function()
+    while getgenv().MaceMayhem do
+        task.wait(0.05)
+        pcall(function()
+            local char = Player.Character
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if not root then return end
+            
+            for _, enemy in pairs(game.Players:GetPlayers()) do
+                if enemy ~= Player and enemy.Character and enemy.Character:FindFirstChild("HumanoidRootPart") then
+                    local enemyRoot = enemy.Character.HumanoidRootPart
+                    local dist = (root.Position - enemyRoot.Position).Magnitude
+                    
+                    if dist <= getgenv().AttackDistance then
+                        local enemyHum = enemy.Character:FindFirstChild("Humanoid")
+                        
+                        if enemyHum and enemyHum.Health > 0 then
+                            -- Main Mace Ground Slam / Swing
+                            FireAction("MaceSwing", "Trigger") 
+                            task.wait(0.1)
+                            
+                            -- Guard break follow-up if they turtle up
+                            if enemyHum.MoveDirection.Magnitude == 0 then
+                                FireAction("MaceCrush", "Trigger")
+                            end
+                            
+                            task.wait(0.4)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+print("BOBO EXEC: Mace Mayhem & Auto-Block Loaded Successfully!")
