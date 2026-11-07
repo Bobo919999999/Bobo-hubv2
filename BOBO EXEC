@@ -53,7 +53,7 @@ local function showNotification(itemName)
     end)
 end
 
--- Control Panel pinned safely in the middle-left (impossible to lose)
+-- Control Panel pinned safely in the middle-left
 local mainFrame = Instance.new("Frame")
 mainFrame.Size = UDim2.new(0, 140, 0, 90)
 mainFrame.Position = UDim2.new(0, 20, 0.4, 0)
@@ -106,8 +106,21 @@ local function updateAllColors()
     end
 end
 
+local function isPlayerRelated(obj)
+    local ancestor = obj
+    while ancestor and ancestor ~= Workspace do
+        if Players:GetPlayerFromCharacter(ancestor) or ancestor:IsA("Player") then
+            return true
+        end
+        ancestor = ancestor.Parent
+    end
+    return false
+end
+
 local function createESP(target, isNewSpawn)
     if not target or ProcessedItems[target] then return end
+    if isPlayerRelated(target) then return end
+
     ProcessedItems[target] = true
 
     if isNewSpawn then
@@ -149,14 +162,28 @@ local function createESP(target, isNewSpawn)
     local rainbowHue = 0
 
     local conn
+    local ancestryConn
+
+    local function cleanup()
+        if billboard then billboard:Destroy() end
+        if conn then conn:Disconnect() end
+        if ancestryConn then ancestryConn:Disconnect() end
+        ProcessedItems[target] = nil
+        ActiveBillboards[target] = nil
+        ActiveLabels[target] = nil
+        RainbowLabels[label] = nil
+    end
+
+    -- Instant cleanup the millisecond the item is claimed/destroyed (fixes claim lag)
+    ancestryConn = target.AncestryChanged:Connect(function(_, parent)
+        if not parent then
+            cleanup()
+        end
+    end)
+
     conn = RunService.RenderStepped:Connect(function(dt)
         if not target or not target.Parent or not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            if billboard then billboard:Destroy() end
-            if conn then conn:Disconnect() end
-            ProcessedItems[target] = nil
-            ActiveBillboards[target] = nil
-            ActiveLabels[target] = nil
-            RainbowLabels[label] = nil
+            cleanup()
             return
         end
 
@@ -183,6 +210,8 @@ end
 
 local function scan(obj, isNewSpawn)
     if obj:IsA("BasePart") or obj:IsA("Model") then
+        if isPlayerRelated(obj) then return end
+        
         local n = obj.Name:lower()
         if n:find("candy") or n:find("bowl") or n:find("basket") or n:find("bucket") or n:find("pail") or n:find("treat") or n:find("pumpkin") then
             createESP(obj, isNewSpawn)
