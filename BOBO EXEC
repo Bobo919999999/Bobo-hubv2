@@ -1,21 +1,18 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local CoreGui = game:GetService("CoreGui") -- CoreGui bypasses PlayerGui blocks in executors
+local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
 
--- Remove old instance if exists
 if CoreGui:FindFirstChild("CandyFarmCore") then
     CoreGui.CandyFarmCore:Destroy()
 end
 
--- Create ScreenGui in CoreGui so it always renders on mobile
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "CandyFarmCore"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = CoreGui
 
--- Create a big, visible floating button
 local button = Instance.new("TextButton")
 button.Size = UDim2.new(0, 180, 0, 50)
 button.Position = UDim2.new(0.5, -90, 0.1, 0)
@@ -46,13 +43,28 @@ button.MouseButton1Click:Connect(function()
     end
 end)
 
--- Scan Workspace for candy bowls
+local function isInsideShop(obj)
+    local ancestor = obj
+    while ancestor and ancestor ~= Workspace do
+        local name = ancestor.Name:lower()
+        if name:find("shop") or name:find("store") or name:find("interior") or name:find("merchant") or name:find("register") then
+            return true
+        end
+        ancestor = ancestor.Parent
+    end
+    return false
+end
+
 local function scan(obj)
     if obj:IsA("BasePart") or obj:IsA("Model") then
+        -- Skip anything inside a shop or player model
+        if isInsideShop(obj) then return end
+        
         local n = obj.Name:lower()
         if (n:find("candy") or n:find("bowl") or n:find("basket") or n:find("bucket") or n:find("pail") or n:find("treat")) and not n:find("pumpkin") then
-            local parentName = obj.Parent and obj.Parent.Name:lower() or ""
-            if not parentName:find("shop") and not parentName:find("display") then
+            -- Verify it has a ProximityPrompt (ensures it's an active world pickup, not a static map asset)
+            local prompt = obj:FindFirstChildOfClass("ProximityPrompt", true)
+            if prompt then
                 table.insert(TargetList, obj)
                 obj.AncestryChanged:Connect(function(_, parent)
                     if not parent then
@@ -87,7 +99,7 @@ task.spawn(function()
                     
                     local closestPos = nil
                     local shortestDist = math.huge
-                    local targetObj = nil
+                    local targetPrompt = nil
 
                     for _, target in ipairs(TargetList) do
                         if target and target.Parent then
@@ -96,16 +108,15 @@ task.spawn(function()
                             if dist < shortestDist then
                                 shortestDist = dist
                                 closestPos = pos
-                                targetObj = target
+                                targetPrompt = target:FindFirstChildOfClass("ProximityPrompt", true)
                             end
                         end
                     end
 
                     if closestPos then
                         humanoid:MoveTo(closestPos)
-                        local prompt = targetObj and (targetObj:FindFirstChildOfClass("ProximityPrompt", true))
-                        if shortestDist <= 8 and prompt then
-                            fireproximityprompt(prompt)
+                        if shortestDist <= 8 and targetPrompt then
+                            fireproximityprompt(targetPrompt)
                         end
                     end
                 end
