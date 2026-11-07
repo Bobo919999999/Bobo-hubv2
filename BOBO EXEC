@@ -74,57 +74,15 @@ local ESP_Folder = Instance.new("Folder")
 ESP_Folder.Name = "CandyESP_Folder"
 ESP_Folder.Parent = CoreGui
 
-local TrackedObjects = {}
+local ActiveESP = {}
 
-local function cleanString(str)
-    return str:lower():gsub("[%s%p]", "")
-end
-
-local function isPlayerRelated(obj)
-    local ancestor = obj
-    while ancestor and ancestor ~= Workspace do
-        if Players:GetPlayerFromCharacter(ancestor) or ancestor:IsA("Player") then
-            return true
-        end
-        ancestor = ancestor.Parent
-    end
-    return false
-end
-
-local function isCosmeticOrShop(obj)
-    local ancestor = obj
-    while ancestor and ancestor ~= Workspace do
-        local aname = ancestor.Name:lower()
-        if aname:find("shop") or aname:find("store") or aname:find("cosmetic") or 
-           aname:find("accessory") or aname:find("hat") or aname:find("display") or 
-           aname:find("merchant") or aname:find("booth") then
-            return true
-        end
-        ancestor = ancestor.Parent
-    end
-    return false
-end
-
-local function getAdorneePart(obj)
-    if obj:IsA("BasePart") then return obj end
-    if obj:IsA("Model") then
-        if obj.PrimaryPart then return obj.PrimaryPart end
-        return obj:FindFirstChildWhichIsA("BasePart", true)
-    end
-    return nil
-end
-
-local function createESP(obj, isBasket)
-    if TrackedObjects[obj] then return end
-    
-    local targetPart = getAdorneePart(obj)
-    if not targetPart then return end
-    
-    TrackedObjects[obj] = true
+local function createESP(obj)
+    if ActiveESP[obj] or not obj.Parent then return end
+    ActiveESP[obj] = true
 
     local bb = Instance.new("BillboardGui")
     bb.Name = "ESP_" .. obj.Name
-    bb.Adornee = targetPart
+    bb.Adornee = obj
     bb.AlwaysOnTop = true
     bb.Size = UDim2.new(0, 120, 0, 45)
     bb.StudsOffset = Vector3.new(0, 3.5, 0)
@@ -147,8 +105,11 @@ local function createESP(obj, isBasket)
     label.Text = obj.Name
     label.Parent = frame
 
+    local n = obj.Name:lower()
+    local isBasket = n:find("basket")
+
     if isBasket then
-        -- Dark Gray with Black Gradient for CandyBasket
+        -- Dark Gray with Black Gradient for Candy Basket
         frame.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
         label.TextColor3 = Color3.fromRGB(255, 255, 255)
 
@@ -160,7 +121,7 @@ local function createESP(obj, isBasket)
         blackGradient.Rotation = 90
         blackGradient.Parent = frame
     else
-        -- Rainbow Gradient for other items
+        -- Rainbow Gradient for Candy Bag, Bowl, and Pumpkin
         frame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
         label.TextColor3 = Color3.fromRGB(255, 255, 255)
 
@@ -185,37 +146,31 @@ local function createESP(obj, isBasket)
 
     obj.AncestryChanged:Connect(function(_, parent)
         if not parent then
-            TrackedObjects[obj] = nil
+            ActiveESP[obj] = nil
             bb:Destroy()
         end
     end)
 end
 
-local function checkAndApply(obj, isNewSpawn)
+local function scan(obj, isNewSpawn)
     if obj:IsA("BasePart") or obj:IsA("Model") then
-        if isPlayerRelated(obj) or isCosmeticOrShop(obj) then return end
+        local n = obj.Name:lower()
         
-        local clean = cleanString(obj.Name)
-        
-        -- Matches candybasket, candybag, candybowl, pumpkin regardless of spacing/case
-        if clean:find("candybasket") or clean:find("candybag") or clean:find("candybowl") or clean == "pumpkin" then
-            
-            -- Wait up to 1 second for ProximityPrompt to register if it loads dynamically
-            local prompt = obj:FindFirstChildOfClass("ProximityPrompt", true)
-            if not prompt then
-                task.wait(0.5)
-                prompt = obj:FindFirstChildOfClass("ProximityPrompt", true)
+        -- Matches based on your original simple structure
+        if n:find("candy") or n:find("bowl") or n:find("basket") or n:find("bucket") or n:find("pail") or n:find("treat") or n:find("pumpkin") then
+            -- Exclude player characters
+            local ancestor = obj
+            local isPlayer = false
+            while ancestor and ancestor ~= Workspace do
+                if Players:GetPlayerFromCharacter(ancestor) then
+                    isPlayer = true
+                    break
+                end
+                ancestor = ancestor.Parent
             end
 
-            if prompt then
-                local actionText = (prompt.ActionText or ""):lower()
-                if actionText:find("buy") or actionText:find("equip") or actionText:find("try") or actionText:find("exchange") then
-                    return
-                end
-
-                local isBasket = clean:find("candybasket") ~= nil
-                createESP(obj, isBasket)
-
+            if not isPlayer then
+                createESP(obj)
                 if isNewSpawn then
                     notify(obj.Name)
                 end
@@ -224,12 +179,12 @@ local function checkAndApply(obj, isNewSpawn)
     end
 end
 
--- Initial map scan
+-- Initial scan
 for _, obj in ipairs(Workspace:GetDescendants()) do
-    task.spawn(checkAndApply, obj, false)
+    scan(obj, false)
 end
 
--- Live spawn listener
+-- Live spawn monitor
 Workspace.DescendantAdded:Connect(function(obj)
-    task.spawn(checkAndApply, obj, true)
+    scan(obj, true)
 end)
