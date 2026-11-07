@@ -1,201 +1,115 @@
-local success, err = pcall(function()
-    local Players = game:GetService("Players")
-    local Workspace = game:GetService("Workspace")
-    local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local CoreGui = game:GetService("CoreGui") -- CoreGui bypasses PlayerGui blocks in executors
 
-    local LocalPlayer = Players.LocalPlayer
-    local PlayerGui = LocalPlayer:WaitForChild("PlayerGui", 5)
-    if not PlayerGui then return end
+local LocalPlayer = Players.LocalPlayer
 
-    -- Cleanup existing UI if it exists
-    if PlayerGui:FindFirstChild("CandyFarmUI") then
-        PlayerGui.CandyFarmUI:Destroy()
+-- Remove old instance if exists
+if CoreGui:FindFirstChild("CandyFarmCore") then
+    CoreGui.CandyFarmCore:Destroy()
+end
+
+-- Create ScreenGui in CoreGui so it always renders on mobile
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "CandyFarmCore"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = CoreGui
+
+-- Create a big, visible floating button
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(0, 180, 0, 50)
+button.Position = UDim2.new(0.5, -90, 0.1, 0)
+button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+button.TextColor3 = Color3.fromRGB(255, 140, 0)
+button.Font = Enum.Font.GothamBold
+button.TextSize = 14
+button.Text = "🍬 AUTO-WALK: OFF"
+button.Active = true
+button.Draggable = true
+button.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 8)
+corner.Parent = button
+
+local AutoWalkEnabled = false
+local TargetList = {}
+
+button.MouseButton1Click:Connect(function()
+    AutoWalkEnabled = not AutoWalkEnabled
+    if AutoWalkEnabled then
+        button.Text = "🍬 AUTO-WALK: ON"
+        button.TextColor3 = Color3.fromRGB(50, 255, 50)
+    else
+        button.Text = "🍬 AUTO-WALK: OFF"
+        button.TextColor3 = Color3.fromRGB(255, 140, 0)
     end
+end)
 
-    local ESPEnabled = true
-    local AutoWalkEnabled = false
-    local ActiveTargets = {}
-    local Billboards = {}
-
-    -- UI Setup
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "CandyFarmUI"
-    screenGui.ResetOnSpawn = false
-    screenGui.Parent = PlayerGui
-
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Size = UDim2.new(0, 160, 0, 115)
-    mainFrame.Position = UDim2.new(0, 20, 0.35, 0)
-    mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-    mainFrame.BorderSizePixel = 0
-    mainFrame.Active = true
-    mainFrame.Draggable = true
-    mainFrame.Parent = screenGui
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
-    corner.Parent = mainFrame
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(255, 140, 0)
-    stroke.Thickness = 1.5
-    stroke.Parent = mainFrame
-
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 25)
-    title.Position = UDim2.new(0, 0, 0, 4)
-    title.BackgroundTransparency = 1
-    title.TextColor3 = Color3.fromRGB(240, 240, 240)
-    title.Font = Enum.Font.GothamBold
-    title.TextSize = 11
-    title.Text = "🍬 CANDY FARMER"
-    title.Parent = mainFrame
-
-    local function createButton(yPos, text, color)
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(0.88, 0, 0, 30)
-        btn.Position = UDim2.new(0.06, 0, 0, yPos)
-        btn.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
-        btn.TextColor3 = color
-        btn.Font = Enum.Font.GothamSemibold
-        btn.TextSize = 11
-        btn.Text = text
-        btn.Parent = mainFrame
-
-        local btnCorner = Instance.new("UICorner")
-        btnCorner.CornerRadius = UDim.new(0, 6)
-        btnCorner.Parent = btn
-
-        return btn
-    end
-
-    local espBtn = createButton(32, "ESP: ON", Color3.fromRGB(255, 140, 0))
-    local autoBtn = createButton(68, "AUTO-WALK: OFF", Color3.fromRGB(140, 140, 150))
-
-    local function isPlayerItem(obj)
-        return obj:FindFirstAncestorOfClass("Model") and Players:GetPlayerFromCharacter(obj:FindFirstAncestorOfClass("Model")) ~= nil
-    end
-
-    local function checkObject(obj)
-        if obj:IsA("BasePart") or obj:IsA("Model") then
-            if isPlayerItem(obj) then return end
-            local n = obj.Name:lower()
-            if (n:find("candy") or n:find("bowl") or n:find("basket") or n:find("bucket") or n:find("pail") or n:find("treat")) and not n:find("pumpkin") then
-                local parentName = obj.Parent and obj.Parent.Name:lower() or ""
-                if not parentName:find("shop") and not parentName:find("display") then
-                    if not ActiveTargets[obj] then
-                        ActiveTargets[obj] = obj
-                        
-                        local billboard = Instance.new("BillboardGui")
-                        billboard.Name = "CandyTag"
-                        billboard.AlwaysOnTop = true
-                        billboard.Size = UDim2.new(0, 120, 0, 30)
-                        billboard.StudsOffset = Vector3.new(0, 2.5, 0)
-                        billboard.Adornee = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")) or obj
-
-                        local label = Instance.new("TextLabel")
-                        label.Size = UDim2.new(1, 0, 1, 0)
-                        label.BackgroundTransparency = 1
-                        label.TextColor3 = Color3.fromRGB(255, 140, 0)
-                        label.TextStrokeTransparency = 0.2
-                        label.Font = Enum.Font.GothamBold
-                        label.TextSize = 12
-                        label.Text = "🍬 Candy Bowl"
-                        label.Parent = billboard
-
-                        billboard.Parent = billboard.Adornee
-                        Billboards[obj] = billboard
-
-                        obj.AncestryChanged:Connect(function(_, parent)
-                            if not parent then
-                                if billboard then billboard:Destroy() end
-                                ActiveTargets[obj] = nil
-                                Billboards[obj] = nil
-                            end
-                        end)
-                    end
-                end
-            end
-        end
-    end
-
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        checkObject(obj)
-    end
-
-    Workspace.DescendantAdded:Connect(checkObject)
-
-    -- Render Loop for Distances
-    RunService.RenderStepped:Connect(function()
-        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
-        local hrp = LocalPlayer.Character.HumanoidRootPart
-
-        for target, _ in pairs(ActiveTargets) do
-            local billboard = Billboards[target]
-            if billboard and billboard:FindFirstChildOfClass("TextLabel") then
-                if ESPEnabled then
-                    billboard.Enabled = true
-                    local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.Position or target:GetPivot().Position) or target.Position
-                    local dist = math.floor((hrp.Position - pos).Magnitude)
-                    billboard.TextLabel.Text = "🍬 [" .. dist .. "m]"
-                else
-                    billboard.Enabled = false
-                end
-            end
-        end
-    end)
-
-    -- Auto-Walk Loop
-    task.spawn(function()
-        while task.wait(0.3) do
-            if AutoWalkEnabled and LocalPlayer.Character then
-                pcall(function()
-                    local char = LocalPlayer.Character
-                    local hrp = char:FindFirstChild("HumanoidRootPart")
-                    local humanoid = char:FindFirstChild("Humanoid")
-
-                    if hrp and humanoid then
-                        local closestPos = nil
-                        local shortestDist = math.huge
-
-                        for target, _ in pairs(ActiveTargets) do
-                            if target and target.Parent then
-                                local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.Position or target:GetPivot().Position) or target.Position
-                                local dist = (hrp.Position - pos).Magnitude
-                                if dist < shortestDist then
-                                    shortestDist = dist
-                                    closestPos = pos
-                                end
-                            end
-                        end
-
-                        if closestPos then
-                            humanoid:MoveTo(closestPos)
-                            local prompt = target:FindFirstChildOfClass("ProximityPrompt", true)
-                            if shortestDist <= 8 and prompt then
-                                fireproximityprompt(prompt)
+-- Scan Workspace for candy bowls
+local function scan(obj)
+    if obj:IsA("BasePart") or obj:IsA("Model") then
+        local n = obj.Name:lower()
+        if (n:find("candy") or n:find("bowl") or n:find("basket") or n:find("bucket") or n:find("pail") or n:find("treat")) and not n:find("pumpkin") then
+            local parentName = obj.Parent and obj.Parent.Name:lower() or ""
+            if not parentName:find("shop") and not parentName:find("display") then
+                table.insert(TargetList, obj)
+                obj.AncestryChanged:Connect(function(_, parent)
+                    if not parent then
+                        for i, v in ipairs(TargetList) do
+                            if v == obj then
+                                table.remove(TargetList, i)
+                                break
                             end
                         end
                     end
                 end)
             end
         end
-    end)
-
-    -- Button Toggles
-    espBtn.MouseButton1Click:Connect(function()
-        ESPEnabled = not ESPEnabled
-        espBtn.Text = ESPEnabled and "ESP: ON" or "ESP: OFF"
-        espBtn.TextColor3 = ESPEnabled and Color3.fromRGB(255, 140, 0) or Color3.fromRGB(140, 140, 150)
-    end)
-
-    autoBtn.MouseButton1Click:Connect(function()
-        AutoWalkEnabled = not AutoWalkEnabled
-        autoBtn.Text = AutoWalkEnabled and "AUTO-WALK: ON" or "AUTO-WALK: OFF"
-        autoBtn.TextColor3 = AutoWalkEnabled and Color3.fromRGB(50, 220, 50) or Color3.fromRGB(140, 140, 150)
-    end)
-end)
-
-if not success then
-    warn("CandyFarm UI Error: " .. tostring(err))
+    end
 end
+
+for _, obj in ipairs(Workspace:GetDescendants()) do
+    scan(obj)
+end
+
+Workspace.DescendantAdded:Connect(scan)
+
+-- Auto-walk Loop
+task.spawn(function()
+    while task.wait(0.3) do
+        if AutoWalkEnabled then
+            pcall(function()
+                local char = LocalPlayer.Character
+                if char and char:FindFirstChild("Humanoid") and char:FindFirstChild("HumanoidRootPart") then
+                    local hrp = char.HumanoidRootPart
+                    local humanoid = char.Humanoid
+                    
+                    local closestPos = nil
+                    local shortestDist = math.huge
+                    local targetObj = nil
+
+                    for _, target in ipairs(TargetList) do
+                        if target and target.Parent then
+                            local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.Position or target:GetPivot().Position) or target.Position
+                            local dist = (hrp.Position - pos).Magnitude
+                            if dist < shortestDist then
+                                shortestDist = dist
+                                closestPos = pos
+                                targetObj = target
+                            end
+                        end
+                    end
+
+                    if closestPos then
+                        humanoid:MoveTo(closestPos)
+                        local prompt = targetObj and (targetObj:FindFirstChildOfClass("ProximityPrompt", true))
+                        if shortestDist <= 8 and prompt then
+                            fireproximityprompt(prompt)
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end)
