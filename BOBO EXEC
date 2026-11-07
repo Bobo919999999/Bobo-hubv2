@@ -43,28 +43,21 @@ button.MouseButton1Click:Connect(function()
     end
 end)
 
-local function isInsideShop(obj)
-    local ancestor = obj
-    while ancestor and ancestor ~= Workspace do
-        local name = ancestor.Name:lower()
-        if name:find("shop") or name:find("store") or name:find("interior") or name:find("merchant") or name:find("register") then
-            return true
-        end
-        ancestor = ancestor.Parent
-    end
-    return false
-end
-
 local function scan(obj)
     if obj:IsA("BasePart") or obj:IsA("Model") then
-        -- Skip anything inside a shop or player model
-        if isInsideShop(obj) then return end
-        
         local n = obj.Name:lower()
         if (n:find("candy") or n:find("bowl") or n:find("basket") or n:find("bucket") or n:find("pail") or n:find("treat")) and not n:find("pumpkin") then
-            -- Verify it has a ProximityPrompt (ensures it's an active world pickup, not a static map asset)
             local prompt = obj:FindFirstChildOfClass("ProximityPrompt", true)
             if prompt then
+                -- Check prompt text to ignore shop purchases / exchanges
+                local actionText = (prompt.ActionText or ""):lower()
+                local objectText = (prompt.ObjectText or ""):lower()
+                
+                if actionText:find("buy") or actionText:find("purchase") or actionText:find("exchange") or 
+                   objectText:find("shop") or objectText:find("store") or objectText:find("token") then
+                    return 
+                end
+
                 table.insert(TargetList, obj)
                 obj.AncestryChanged:Connect(function(_, parent)
                     if not parent then
@@ -116,7 +109,10 @@ task.spawn(function()
                     if closestPos then
                         humanoid:MoveTo(closestPos)
                         if shortestDist <= 8 and targetPrompt then
-                            fireproximityprompt(targetPrompt)
+                            local aText = (targetPrompt.ActionText or ""):lower()
+                            if not aText:find("buy") and not aText:find("purchase") then
+                                fireproximityprompt(targetPrompt)
+                            end
                         end
                     end
                 end
