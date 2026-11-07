@@ -30,72 +30,37 @@ corner.CornerRadius = UDim.new(0, 8)
 corner.Parent = button
 
 local AutoWalkEnabled = false
-local TargetList = {}
-local ActiveTargets = {}
 
 button.MouseButton1Click:Connect(function()
     AutoWalkEnabled = not AutoWalkEnabled
-    if AutoWalkEnabled then
-        button.TextColor3 = Color3.fromRGB(50, 255, 50)
-    else
-        button.TextColor3 = Color3.fromRGB(255, 140, 0)
-    end
+    button.TextColor3 = AutoWalkEnabled and Color3.fromRGB(50, 255, 50) or Color3.fromRGB(255, 140, 0)
 end)
 
-local function isInsideShop(obj)
-    local ancestor = obj
-    while ancestor and ancestor ~= Workspace do
-        local name = ancestor.Name:lower()
-        if name:find("shop") or name:find("store") or name:find("interior") or name:find("merchant") or name:find("spirit") or name:find("hallow") or name:find("vendor") or name:find("exchange") or name:find("booth") then
-            return true
-        end
-        ancestor = ancestor.Parent
-    end
-    return false
+local function isPlayerItem(obj)
+    return obj:FindFirstAncestorOfClass("Model") and Players:GetPlayerFromCharacter(obj:FindFirstAncestorOfClass("Model")) ~= nil
 end
 
-local function scan(obj)
-    if obj:IsA("BasePart") or obj:IsA("Model") then
-        if isInsideShop(obj) then return end
-        
-        local n = obj.Name:lower()
-        if (n:find("candy") or n:find("bowl") or n:find("basket") or n:find("bucket") or n:find("pail") or n:find("treat")) and not n:find("pumpkin") then
-            if not ActiveTargets[obj] then
-                ActiveTargets[obj] = true
-                table.insert(TargetList, obj)
-
-                obj.AncestryChanged:Connect(function(_, parent)
-                    if not parent then
-                        ActiveTargets[obj] = nil
-                        for i, v in ipairs(TargetList) do
-                            if v == obj then
-                                table.remove(TargetList, i)
-                                break
-                            end
-                        end
-                    end
-                end)
+local function getValidPrompts()
+    local prompts = {}
+    for _, prompt in ipairs(Workspace:GetDescendants()) do
+        if prompt:IsA("ProximityPrompt") and prompt.Enabled then
+            local parent = prompt.Parent
+            if parent and not isPlayerItem(parent) then
+                table.insert(prompts, {Prompt = prompt, Parent = parent})
             end
         end
     end
+    return prompts
 end
 
-for _, obj in ipairs(Workspace:GetDescendants()) do
-    scan(obj)
-end
-
-Workspace.DescendantAdded:Connect(scan)
-
--- Core Auto-Walk & UI Status Loop
+-- Core Auto-Walk Loop
 task.spawn(function()
-    while task.wait(0.2) do
+    while task.wait(0.25) do
         pcall(function()
-            local count = #TargetList
-            if not AutoWalkEnabled then
-                button.Text = "🍬 Targets: " .. count .. " | OFF"
-            else
-                button.Text = "🍬 Targets: " .. count .. " | ON"
-            end
+            local validPrompts = getValidPrompts()
+            local count = #validPrompts
+            
+            button.Text = "🍬 Targets: " .. count .. " | " .. (AutoWalkEnabled and "ON" or "OFF")
 
             if AutoWalkEnabled and LocalPlayer.Character then
                 local char = LocalPlayer.Character
@@ -105,16 +70,18 @@ task.spawn(function()
                 if hrp and humanoid then
                     local closestPos = nil
                     local shortestDist = math.huge
-                    local targetObj = nil
+                    local targetPrompt = nil
 
-                    for _, target in ipairs(TargetList) do
-                        if target and target.Parent then
-                            local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.Position or target:GetPivot().Position) or target.Position
+                    for _, data in ipairs(validPrompts) do
+                        local obj = data.Parent
+                        if obj and obj.Parent then
+                            local pos = obj:IsA("Model") and (obj.PrimaryPart and obj.PrimaryPart.Position or obj:GetPivot().Position) or obj.Position
                             local dist = (hrp.Position - pos).Magnitude
+                            
                             if dist < shortestDist then
                                 shortestDist = dist
                                 closestPos = pos
-                                targetObj = target
+                                targetPrompt = data.Prompt
                             end
                         end
                     end
@@ -122,12 +89,9 @@ task.spawn(function()
                     if closestPos then
                         humanoid:MoveTo(closestPos)
                         
-                        -- Fire ProximityPrompt if close enough
-                        if targetObj then
-                            local prompt = targetObj:FindFirstChildOfClass("ProximityPrompt", true)
-                            if shortestDist <= 10 and prompt then
-                                fireproximityprompt(prompt)
-                            end
+                        -- Fire prompt when close enough
+                        if shortestDist <= 10 and targetPrompt then
+                            fireproximityprompt(targetPrompt)
                         end
                     end
                 end
