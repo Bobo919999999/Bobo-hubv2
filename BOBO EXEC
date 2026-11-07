@@ -1,301 +1,189 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local PathfindingService = game:GetService("PathfindingService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
-if PlayerGui:FindFirstChild("CleanESP") then
-    PlayerGui.CleanESP:Destroy()
+-- Cleanup existing UI
+if PlayerGui:FindFirstChild("CandyFarmUI") then
+    PlayerGui.CandyFarmUI:Destroy()
 end
 
 local ESPEnabled = true
-local AutoFarmEnabled = false
-local ProcessedItems = {}
-local ActiveBillboards = {}
+local AutoWalkEnabled = false
+local ActiveTargets = {}
+local Billboards = {}
 local RainbowLabels = {}
-local TargetList = {}
 
 local Colors = {
-    {Name = "Orange", Color = Color3.fromRGB(255, 165, 0)},
-    {Name = "Pink",   Color = Color3.fromRGB(255, 105, 180)},
-    {Name = "Cyan",   Color = Color3.fromRGB(0, 255, 255)},
-    {Name = "Green",  Color = Color3.fromRGB(50, 255, 50)},
-    {Name = "Yellow", Color = Color3.fromRGB(255, 215, 0)}
+    {Name = "Orange", Color = Color3.fromRGB(255, 140, 0)},
+    {Name = "Cyan", Color = Color3.fromRGB(0, 220, 255)},
+    {Name = "Pink", Color = Color3.fromRGB(255, 105, 180)},
+    {Name = "Green", Color = Color3.fromRGB(50, 220, 50)},
+    {Name = "Purple", Color = Color3.fromRGB(175, 80, 255)}
 }
-local currentColorIndex = 1
+local currentColorIdx = 1
 
+-- UI Setup
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "CleanESP"
+screenGui.Name = "CandyFarmUI"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = PlayerGui
 
--- Notification Banner
-local notifyLabel = Instance.new("TextLabel")
-notifyLabel.Size = UDim2.new(0, 280, 0, 40)
-notifyLabel.Position = UDim2.new(0.5, -140, 0.08, 0)
-notifyLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-notifyLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
-notifyLabel.Font = Enum.Font.SourceSansBold
-notifyLabel.TextSize = 15
-notifyLabel.Text = "🌈 Candy Bowl Spawned!"
-notifyLabel.Visible = false
-notifyLabel.Parent = screenGui
-
-local notifyCorner = Instance.new("UICorner")
-notifyCorner.CornerRadius = UDim.new(0, 8)
-notifyCorner.Parent = notifyLabel
-
-local function showNotification(itemName)
-    notifyLabel.Text = "🌈 Rainbow Bowl: " .. itemName
-    notifyLabel.Visible = true
-    task.delay(3, function()
-        notifyLabel.Visible = false
-    end)
-end
-
--- Control Panel
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 140, 0, 122)
-mainFrame.Position = UDim2.new(0, 20, 0.4, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+mainFrame.Size = UDim2.new(0, 160, 0, 145)
+mainFrame.Position = UDim2.new(0, 20, 0.35, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
 mainFrame.Draggable = true
 mainFrame.Parent = screenGui
 
 local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 8)
+corner.CornerRadius = UDim.new(0, 10)
 corner.Parent = mainFrame
 
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 0, 20)
-titleLabel.Position = UDim2.new(0, 0, 0, 2)
-titleLabel.BackgroundTransparency = 1
-titleLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-titleLabel.Font = Enum.Font.SourceSansBold
-titleLabel.TextSize = 11
-titleLabel.Text = "RE: Heads Please ESP"
-titleLabel.Parent = mainFrame
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(255, 140, 0)
+stroke.Thickness = 1.5
+stroke.Parent = mainFrame
 
-local toggleBtn = Instance.new("TextButton")
-toggleBtn.Size = UDim2.new(0.9, 0, 0, 28)
-toggleBtn.Position = UDim2.new(0.05, 0, 0, 24)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-toggleBtn.TextColor3 = Color3.fromRGB(255, 150, 50)
-toggleBtn.Font = Enum.Font.SourceSansBold
-toggleBtn.TextSize = 13
-toggleBtn.Text = "🍬 ESP: ON"
-toggleBtn.Parent = mainFrame
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 25)
+title.Position = UDim2.new(0, 0, 0, 4)
+title.BackgroundTransparency = 1
+title.TextColor3 = Color3.fromRGB(240, 240, 240)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 11
+title.Text = "🍬 CANDY FARMER"
+title.Parent = mainFrame
 
-local autofarmBtn = Instance.new("TextButton")
-autofarmBtn.Size = UDim2.new(0.9, 0, 0, 28)
-autofarmBtn.Position = UDim2.new(0.05, 0, 0, 56)
-autofarmBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-autofarmBtn.TextColor3 = Color3.fromRGB(150, 150, 255)
-autofarmBtn.Font = Enum.Font.SourceSansBold
-autofarmBtn.TextSize = 13
-autofarmBtn.Text = "🚶 Auto-Walk: OFF"
-autofarmBtn.Parent = mainFrame
+local function createButton(yPos, text, color)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.88, 0, 0, 30)
+    btn.Position = UDim2.new(0.06, 0, 0, yPos)
+    btn.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
+    btn.TextColor3 = color
+    btn.Font = Enum.Font.GothamSemibold
+    btn.TextSize = 11
+    btn.Text = text
+    btn.Parent = mainFrame
 
-local colorBtn = Instance.new("TextButton")
-colorBtn.Size = UDim2.new(0.9, 0, 0, 28)
-colorBtn.Position = UDim2.new(0.05, 0, 0, 88)
-colorBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-colorBtn.TextColor3 = Colors[currentColorIndex].Color
-colorBtn.Font = Enum.Font.SourceSansBold
-colorBtn.TextSize = 13
-colorBtn.Text = "🎨 Color: Orange"
-colorBtn.Parent = mainFrame
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 6)
+    btnCorner.Parent = btn
 
-local function updateAllColors()
-    local newColor = Colors[currentColorIndex].Color
-    for label, isRainbow in pairs(RainbowLabels) do
-        if not isRainbow and label and label.Parent then
-            label.TextColor3 = newColor
-        end
-    end
+    return btn
 end
 
-local function isPlayerRelated(obj)
-    local ancestor = obj
-    while ancestor and ancestor ~= Workspace do
-        if Players:GetPlayerFromCharacter(ancestor) or ancestor:IsA("Player") then
-            return true
-        end
-        ancestor = ancestor.Parent
-    end
-    return false
+local espBtn = createButton(32, "ESP: ON", Color3.fromRGB(255, 140, 0))
+local autoBtn = createButton(68, "AUTO-WALK: OFF", Color3.fromRGB(140, 140, 150))
+local colorBtn = createButton(104, "COLOR: Orange", Colors[currentColorIdx].Color)
+
+-- Helper Functions
+local function isPlayerItem(obj)
+    return obj:FindFirstAncestorOfClass("Model") and Players:GetPlayerFromCharacter(obj:FindFirstAncestorOfClass("Model")) ~= nil
 end
 
-local function createESP(target, isNewSpawn)
-    if not target or ProcessedItems[target] then return end
-    if isPlayerRelated(target) then return end
-
-    ProcessedItems[target] = true
-    table.insert(TargetList, target)
-
-    if isNewSpawn then
-        showNotification(target.Name)
+local function getTargetPart(obj)
+    if obj:IsA("BasePart") then return obj end
+    if obj:IsA("Model") then
+        return obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart") or obj:GetPivot().Position
     end
+    return nil
+end
+
+local function addESP(target, prompt)
+    if not target or ActiveTargets[target] or isPlayerItem(target) then return end
+    
+    local part = getTargetPart(target)
+    if not part then return end
+
+    ActiveTargets[target] = {Part = part, Prompt = prompt}
 
     local billboard = Instance.new("BillboardGui")
-    billboard.Name = "ESPTag"
-    billboard.Adornee = target
-    billboard.Size = UDim2.new(0, 100, 0, 30)
-    billboard.StudsOffset = Vector3.new(0, 2, 0)
+    billboard.Name = "CandyTag"
     billboard.AlwaysOnTop = true
-    billboard.Enabled = ESPEnabled
+    billboard.Size = UDim2.new(0, 120, 0, 30)
+    billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+    billboard.Adornee = part
 
     local label = Instance.new("TextLabel")
     label.Size = UDim2.new(1, 0, 1, 0)
     label.BackgroundTransparency = 1
-    
-    local isRainbow = isNewSpawn
-    RainbowLabels[label] = isRainbow
-
-    if isRainbow then
-        label.TextColor3 = Color3.fromHSV(0, 1, 1)
-    else
-        label.TextColor3 = Colors[currentColorIndex].Color
-    end
-
-    label.TextStrokeTransparency = 0.3
-    label.Font = Enum.Font.SourceSansBold
+    label.TextColor3 = Colors[currentColorIdx].Color
+    label.TextStrokeTransparency = 0.2
+    label.Font = Enum.Font.GothamBold
     label.TextSize = 12
-    label.Text = "🍬 Target"
+    label.Text = "🍬 Candy Bowl"
     label.Parent = billboard
 
-    billboard.Parent = target
-    ActiveBillboards[target] = billboard
+    billboard.Parent = part
+    Billboards[target] = billboard
 
-    local frameCounter = math.random(1, 5)
-    local rainbowHue = 0
-
+    -- Dynamic Cleanup when collected or destroyed
     local conn
-    local ancestryConn
+    conn = target.AncestryChanged:Connect(function(_, parent)
+        if not parent then
+            if billboard then billboard:Destroy() end
+            ActiveTargets[target] = nil
+            Billboards[target] = nil
+            conn:Disconnect()
+        end
+    end)
+end
 
-    local function cleanup()
-        if billboard then billboard:Destroy() end
-        if conn then conn:Disconnect() end
-        if ancestryConn then ancestryConn:Disconnect() end
-        ProcessedItems[target] = nil
-        ActiveBillboards[target] = nil
-        RainbowLabels[label] = nil
-        for i, v in ipairs(TargetList) do
-            if v == target then
-                table.remove(TargetList, i)
-                break
+-- Scanning Logic (Focuses on Interactive Collectibles)
+local function checkObject(obj)
+    if obj:IsA("ProximityPrompt") then
+        local parent = obj.Parent
+        if parent and not isPlayerItem(parent) then
+            addESP(parent, obj)
+        end
+    end
+end
+
+-- Scan existing Workspace
+for _, obj in ipairs(Workspace:GetDescendants()) do
+    checkObject(obj)
+end
+
+-- Listen for new spawns
+Workspace.DescendantAdded:Connect(function(child)
+    checkObject(child)
+end)
+
+-- Render Loop for Distances and ESP Toggle
+RunService.RenderStepped:Connect(function()
+    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
+    local hrp = LocalPlayer.Character.HumanoidRootPart
+
+    for target, data in pairs(ActiveTargets) do
+        local billboard = Billboards[target]
+        if billboard and billboard:FindFirstChildOfClass("TextLabel") then
+            if ESPEnabled then
+                billboard.Enabled = true
+                local pos = typeof(data.Part) == "Vector3" and data.Part or data.Part.Position
+                local dist = math.floor((hrp.Position - pos).Magnitude)
+                billboard.TextLabel.Text = "🍬 Candy [" .. dist .. "m]"
+            else
+                billboard.Enabled = false
             end
         end
     end
+end)
 
-    ancestryConn = target.AncestryChanged:Connect(function(_, parent)
-        if not parent then
-            cleanup()
-        end
-    end)
-
-    conn = RunService.RenderStepped:Connect(function(dt)
-        if not target or not target.Parent or not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            cleanup()
-            return
-        end
-
-        if isRainbow and label and label.Parent then
-            rainbowHue = (rainbowHue + dt * 0.5) % 1
-            label.TextColor3 = Color3.fromHSV(rainbowHue, 1, 1)
-        end
-
-        frameCounter = frameCounter + 1
-        if frameCounter % 5 ~= 0 then return end
-
-        local hrp = LocalPlayer.Character.HumanoidRootPart
-        local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.Position or target:GetPivot().Position) or target.Position
-        local dist = math.floor((hrp.Position - pos).Magnitude)
-        
-        if dist > 500 then
-            billboard.Enabled = false
-        else
-            billboard.Enabled = ESPEnabled
-            label.Text = "🍬 [" .. dist .. "s]"
-        end
-    end)
-end
-
-local function scan(obj, isNewSpawn)
-    if obj:IsA("BasePart") or obj:IsA("Model") then
-        if isPlayerRelated(obj) then return end
-        
-        local parentName = obj.Parent and obj.Parent.Name:lower() or ""
-        if parentName:find("shop") or parentName:find("display") then return end
-
-        local n = obj.Name:lower()
-        if (n:find("candy") or n:find("bowl") or n:find("basket") or n:find("bucket") or n:find("pail") or n:find("treat")) and not n:find("pumpkin") then
-            createESP(obj, isNewSpawn)
-        end
-    end
-end
-
--- Auto-walk Loop
+-- Auto-Walk Controller Loop
 task.spawn(function()
-    while task.wait(0.3) do
-        if AutoFarmEnabled then
+    while task.wait(0.4) do
+        if AutoWalkEnabled and LocalPlayer.Character then
             pcall(function()
                 local char = LocalPlayer.Character
-                if char and char:FindFirstChild("Humanoid") and char:FindFirstChild("HumanoidRootPart") then
-                    local hrp = char.HumanoidRootPart
-                    local humanoid = char.Humanoid
-                    
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                local humanoid = char:FindFirstChild("Humanoid")
+
+                if hrp and humanoid then
                     local closestPos = nil
                     local shortestDist = math.huge
-
-                    for _, target in ipairs(TargetList) do
-                        if target and target.Parent then
-                            local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.Position or target:GetPivot().Position) or target.Position
-                            local dist = (hrp.Position - pos).Magnitude
-                            if dist < shortestDist then
-                                shortestDist = dist
-                                closestPos = pos
-                            end
-                        end
-                    end
-
-                    if closestPos then
-                        humanoid:MoveTo(closestPos)
-                    end
-                end
-            end)
-        end
-    end
-end)
-
-toggleBtn.MouseButton1Click:Connect(function()
-    ESPEnabled = not ESPEnabled
-    toggleBtn.Text = ESPEnabled and "🍬 ESP: ON" or "🍬 ESP: OFF"
-    for _, b in pairs(ActiveBillboards) do
-        if b then b.Enabled = ESPEnabled end
-    end
-end)
-
-autofarmBtn.MouseButton1Click:Connect(function()
-    AutoFarmEnabled = not AutoFarmEnabled
-    autofarmBtn.Text = AutoFarmEnabled and "🚶 Auto-Walk: ON" or "🚶 Auto-Walk: OFF"
-    autofarmBtn.TextColor3 = AutoFarmEnabled and Color3.fromRGB(50, 255, 50) or Color3.fromRGB(150, 150, 255)
-end)
-
-colorBtn.MouseButton1Click:Connect(function()
-    currentColorIndex = (currentColorIndex % #Colors) + 1
-    local choice = Colors[currentColorIndex]
-    colorBtn.Text = "🎨 Color: " .. choice.Name
-    colorBtn.TextColor3 = choice.Color
-    updateAllColors()
-end)
-
-for _, obj in ipairs(Workspace:GetDescendants()) do
-    scan(obj, false)
-end
-
-Workspace.DescendantAdded:Connect(function(child)
-    scan(child, true)
-end)
