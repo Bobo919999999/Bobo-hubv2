@@ -1,104 +1,79 @@
--- [[ BOBO EXEC | JJS MACE & AUTO-BLOCK SUITE ]] --
--- Custom optimized for Bobo's Mobile Combat (2026)
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
 
-getgenv().MaceMayhem = true
-getgenv().AutoBlock = true
-getgenv().AttackDistance = 12 -- Mace attack range
-getgenv().BlockDistance = 18  -- Range to start watching for enemy attacks
+local ProcessedCandies = {}
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Player = game.Players.LocalPlayer
+-- Function to create visual indicators (Highlight + Billboard Label)
+local function createCandyESP(candy)
+    if not candy or ProcessedCandies[candy] then return end
+    
+    -- Highlight effect around the candy (visible through walls)
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "CandyHighlight"
+    highlight.Adornee = candy
+    highlight.FillColor = Color3.fromRGB(255, 105, 180) -- Bright Pink
+    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+    highlight.FillTransparency = 0.4
+    highlight.OutlineTransparency = 0
+    highlight.Parent = candy
 
--- FUNCTION TO FIRE ACTIONS DIRECTLY VIA KNIT
-local function FireAction(actionName, state)
-    local args = {
-        [1] = actionName,
-        [2] = state or "Trigger"
-    }
-    ReplicatedStorage.Knit.Services.ActionService.RF.ExecuteAction:InvokeServer(unpack(args))
+    -- Floating text display above the candy
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "CandyBillboard"
+    billboard.Adornee = candy
+    billboard.Size = UDim2.new(0, 160, 0, 40)
+    billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+    billboard.AlwaysOnTop = true
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextStrokeTransparency = 0
+    label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    label.Font = Enum.Font.SourceSansBold
+    label.TextSize = 14
+    label.Text = "🍬 " .. candy.Name
+    label.Parent = billboard
+
+    billboard.Parent = candy
+    ProcessedCandies[candy] = true
+
+    -- Clean up tracking when collected or removed
+    candy.Destroying:Connect(function()
+        ProcessedCandies[candy] = nil
+    end)
 end
 
--- [[ 1. SMART AUTO-BLOCK LOOP ]] --
-task.spawn(function()
-    local isBlocking = false
-    while getgenv().AutoBlock do
-        task.wait(0.01) -- Ultra-fast polling for instant parry timing
-        pcall(function()
-            local char = Player.Character
-            local root = char:FindFirstChild("HumanoidRootPart")
-            if not root then return end
-            
-            local enemyAttacking = false
-            
-            for _, enemy in pairs(game.Players:GetPlayers()) do
-                if enemy ~= Player and enemy.Character and enemy.Character:FindFirstChild("HumanoidRootPart") then
-                    local enemyRoot = enemy.Character.HumanoidRootPart
-                    local dist = (root.Position - enemyRoot.Position).Magnitude
-                    
-                    -- Only scan enemies within immediate danger zone
-                    if dist <= getgenv().BlockDistance then
-                        local enemyChar = enemy.Character
-                        
-                        -- Detects if the enemy is swinging, using a tool, or casting an ability
-                        if enemyChar:FindFirstChild("CombatTag") or 
-                           enemyChar:FindFirstChildOfClass("Tool") and enemyChar:FindFirstChildOfClass("Tool"):FindFirstChild("Active") or
-                           (enemyChar:FindFirstChild("Humanoid") and enemyChar.Humanoid.TargetPoint.Magnitude > 0 and enemyChar.Humanoid.MoveDirection.Magnitude == 0) then
-                            
-                            enemyAttacking = true
-                            break
-                        end
-                    end
+-- Scan Workspace for candy instances
+local function scanForCandies()
+    for _, object in ipairs(Workspace:GetDescendants()) do
+        if object:IsA("BasePart") or object:IsA("Model") then
+            local lowerName = object.Name:lower()
+            if lowerName:find("candy") or lowerName:find("sweet") or lowerName:find("treat") then
+                if not object:FindFirstChild("CandyHighlight") then
+                    createCandyESP(object)
                 end
             end
-            
-            -- Toggle Shield Block State
-            if enemyAttacking and not isBlocking then
-                isBlocking = true
-                FireAction("Block", "Hold") -- Activates and holds your shield up
-                print("BOBO EXEC: Incoming attack detected! Shield Raised.")
-            elseif not enemyAttacking and isBlocking then
-                isBlocking = false
-                FireAction("Block", "Release") -- Lowers shield when safe
-                print("BOBO EXEC: Safe. Shield Lowered.")
-            end
-        end)
+        end
+    end
+end
+
+-- Run immediate scan and keep monitoring for continuous spawns
+scanForCandies()
+
+task.spawn(function()
+    while true do
+        scanForCandies()
+        task.wait(2)
     end
 end)
 
--- [[ 2. MACE AGGRESSION LOOP ]] --
-task.spawn(function()
-    while getgenv().MaceMayhem do
-        task.wait(0.05)
-        pcall(function()
-            local char = Player.Character
-            local root = char:FindFirstChild("HumanoidRootPart")
-            if not root then return end
-            
-            for _, enemy in pairs(game.Players:GetPlayers()) do
-                if enemy ~= Player and enemy.Character and enemy.Character:FindFirstChild("HumanoidRootPart") then
-                    local enemyRoot = enemy.Character.HumanoidRootPart
-                    local dist = (root.Position - enemyRoot.Position).Magnitude
-                    
-                    if dist <= getgenv().AttackDistance then
-                        local enemyHum = enemy.Character:FindFirstChild("Humanoid")
-                        
-                        if enemyHum and enemyHum.Health > 0 then
-                            -- Main Mace Ground Slam / Swing
-                            FireAction("MaceSwing", "Trigger") 
-                            task.wait(0.1)
-                            
-                            -- Guard break follow-up if they turtle up
-                            if enemyHum.MoveDirection.Magnitude == 0 then
-                                FireAction("MaceCrush", "Trigger")
-                            end
-                            
-                            task.wait(0.4)
-                        end
-                    end
-                end
-            end
-        end)
+-- Detect new candy drops instantly
+Workspace.DescendantAdded:Connect(function(descendant)
+    local lowerName = descendant.Name:lower()
+    if lowerName:find("candy") or lowerName:find("sweet") or lowerName:find("treat") then
+        task.wait(0.1)
+        createCandyESP(descendant)
     end
 end)
-
-print("BOBO EXEC: Mace Mayhem & Auto-Block Loaded Successfully!")
