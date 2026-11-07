@@ -1,189 +1,201 @@
-local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
-local PathfindingService = game:GetService("PathfindingService")
+local success, err = pcall(function()
+    local Players = game:GetService("Players")
+    local Workspace = game:GetService("Workspace")
+    local RunService = game:GetService("RunService")
 
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+    local LocalPlayer = Players.LocalPlayer
+    local PlayerGui = LocalPlayer:WaitForChild("PlayerGui", 5)
+    if not PlayerGui then return end
 
--- Cleanup existing UI
-if PlayerGui:FindFirstChild("CandyFarmUI") then
-    PlayerGui.CandyFarmUI:Destroy()
-end
-
-local ESPEnabled = true
-local AutoWalkEnabled = false
-local ActiveTargets = {}
-local Billboards = {}
-local RainbowLabels = {}
-
-local Colors = {
-    {Name = "Orange", Color = Color3.fromRGB(255, 140, 0)},
-    {Name = "Cyan", Color = Color3.fromRGB(0, 220, 255)},
-    {Name = "Pink", Color = Color3.fromRGB(255, 105, 180)},
-    {Name = "Green", Color = Color3.fromRGB(50, 220, 50)},
-    {Name = "Purple", Color = Color3.fromRGB(175, 80, 255)}
-}
-local currentColorIdx = 1
-
--- UI Setup
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "CandyFarmUI"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = PlayerGui
-
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 160, 0, 145)
-mainFrame.Position = UDim2.new(0, 20, 0.35, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-mainFrame.BorderSizePixel = 0
-mainFrame.Active = true
-mainFrame.Draggable = true
-mainFrame.Parent = screenGui
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 10)
-corner.Parent = mainFrame
-
-local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.fromRGB(255, 140, 0)
-stroke.Thickness = 1.5
-stroke.Parent = mainFrame
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 25)
-title.Position = UDim2.new(0, 0, 0, 4)
-title.BackgroundTransparency = 1
-title.TextColor3 = Color3.fromRGB(240, 240, 240)
-title.Font = Enum.Font.GothamBold
-title.TextSize = 11
-title.Text = "🍬 CANDY FARMER"
-title.Parent = mainFrame
-
-local function createButton(yPos, text, color)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.88, 0, 0, 30)
-    btn.Position = UDim2.new(0.06, 0, 0, yPos)
-    btn.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
-    btn.TextColor3 = color
-    btn.Font = Enum.Font.GothamSemibold
-    btn.TextSize = 11
-    btn.Text = text
-    btn.Parent = mainFrame
-
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 6)
-    btnCorner.Parent = btn
-
-    return btn
-end
-
-local espBtn = createButton(32, "ESP: ON", Color3.fromRGB(255, 140, 0))
-local autoBtn = createButton(68, "AUTO-WALK: OFF", Color3.fromRGB(140, 140, 150))
-local colorBtn = createButton(104, "COLOR: Orange", Colors[currentColorIdx].Color)
-
--- Helper Functions
-local function isPlayerItem(obj)
-    return obj:FindFirstAncestorOfClass("Model") and Players:GetPlayerFromCharacter(obj:FindFirstAncestorOfClass("Model")) ~= nil
-end
-
-local function getTargetPart(obj)
-    if obj:IsA("BasePart") then return obj end
-    if obj:IsA("Model") then
-        return obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart") or obj:GetPivot().Position
+    -- Cleanup existing UI if it exists
+    if PlayerGui:FindFirstChild("CandyFarmUI") then
+        PlayerGui.CandyFarmUI:Destroy()
     end
-    return nil
-end
 
-local function addESP(target, prompt)
-    if not target or ActiveTargets[target] or isPlayerItem(target) then return end
-    
-    local part = getTargetPart(target)
-    if not part then return end
+    local ESPEnabled = true
+    local AutoWalkEnabled = false
+    local ActiveTargets = {}
+    local Billboards = {}
 
-    ActiveTargets[target] = {Part = part, Prompt = prompt}
+    -- UI Setup
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "CandyFarmUI"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = PlayerGui
 
-    local billboard = Instance.new("BillboardGui")
-    billboard.Name = "CandyTag"
-    billboard.AlwaysOnTop = true
-    billboard.Size = UDim2.new(0, 120, 0, 30)
-    billboard.StudsOffset = Vector3.new(0, 2.5, 0)
-    billboard.Adornee = part
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 160, 0, 115)
+    mainFrame.Position = UDim2.new(0, 20, 0.35, 0)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Active = true
+    mainFrame.Draggable = true
+    mainFrame.Parent = screenGui
 
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 1, 0)
-    label.BackgroundTransparency = 1
-    label.TextColor3 = Colors[currentColorIdx].Color
-    label.TextStrokeTransparency = 0.2
-    label.Font = Enum.Font.GothamBold
-    label.TextSize = 12
-    label.Text = "🍬 Candy Bowl"
-    label.Parent = billboard
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = mainFrame
 
-    billboard.Parent = part
-    Billboards[target] = billboard
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(255, 140, 0)
+    stroke.Thickness = 1.5
+    stroke.Parent = mainFrame
 
-    -- Dynamic Cleanup when collected or destroyed
-    local conn
-    conn = target.AncestryChanged:Connect(function(_, parent)
-        if not parent then
-            if billboard then billboard:Destroy() end
-            ActiveTargets[target] = nil
-            Billboards[target] = nil
-            conn:Disconnect()
-        end
-    end)
-end
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 25)
+    title.Position = UDim2.new(0, 0, 0, 4)
+    title.BackgroundTransparency = 1
+    title.TextColor3 = Color3.fromRGB(240, 240, 240)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 11
+    title.Text = "🍬 CANDY FARMER"
+    title.Parent = mainFrame
 
--- Scanning Logic (Focuses on Interactive Collectibles)
-local function checkObject(obj)
-    if obj:IsA("ProximityPrompt") then
-        local parent = obj.Parent
-        if parent and not isPlayerItem(parent) then
-            addESP(parent, obj)
-        end
+    local function createButton(yPos, text, color)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0.88, 0, 0, 30)
+        btn.Position = UDim2.new(0.06, 0, 0, yPos)
+        btn.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
+        btn.TextColor3 = color
+        btn.Font = Enum.Font.GothamSemibold
+        btn.TextSize = 11
+        btn.Text = text
+        btn.Parent = mainFrame
+
+        local btnCorner = Instance.new("UICorner")
+        btnCorner.CornerRadius = UDim.new(0, 6)
+        btnCorner.Parent = btn
+
+        return btn
     end
-end
 
--- Scan existing Workspace
-for _, obj in ipairs(Workspace:GetDescendants()) do
-    checkObject(obj)
-end
+    local espBtn = createButton(32, "ESP: ON", Color3.fromRGB(255, 140, 0))
+    local autoBtn = createButton(68, "AUTO-WALK: OFF", Color3.fromRGB(140, 140, 150))
 
--- Listen for new spawns
-Workspace.DescendantAdded:Connect(function(child)
-    checkObject(child)
-end)
+    local function isPlayerItem(obj)
+        return obj:FindFirstAncestorOfClass("Model") and Players:GetPlayerFromCharacter(obj:FindFirstAncestorOfClass("Model")) ~= nil
+    end
 
--- Render Loop for Distances and ESP Toggle
-RunService.RenderStepped:Connect(function()
-    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
-    local hrp = LocalPlayer.Character.HumanoidRootPart
+    local function checkObject(obj)
+        if obj:IsA("BasePart") or obj:IsA("Model") then
+            if isPlayerItem(obj) then return end
+            local n = obj.Name:lower()
+            if (n:find("candy") or n:find("bowl") or n:find("basket") or n:find("bucket") or n:find("pail") or n:find("treat")) and not n:find("pumpkin") then
+                local parentName = obj.Parent and obj.Parent.Name:lower() or ""
+                if not parentName:find("shop") and not parentName:find("display") then
+                    if not ActiveTargets[obj] then
+                        ActiveTargets[obj] = obj
+                        
+                        local billboard = Instance.new("BillboardGui")
+                        billboard.Name = "CandyTag"
+                        billboard.AlwaysOnTop = true
+                        billboard.Size = UDim2.new(0, 120, 0, 30)
+                        billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+                        billboard.Adornee = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")) or obj
 
-    for target, data in pairs(ActiveTargets) do
-        local billboard = Billboards[target]
-        if billboard and billboard:FindFirstChildOfClass("TextLabel") then
-            if ESPEnabled then
-                billboard.Enabled = true
-                local pos = typeof(data.Part) == "Vector3" and data.Part or data.Part.Position
-                local dist = math.floor((hrp.Position - pos).Magnitude)
-                billboard.TextLabel.Text = "🍬 Candy [" .. dist .. "m]"
-            else
-                billboard.Enabled = false
+                        local label = Instance.new("TextLabel")
+                        label.Size = UDim2.new(1, 0, 1, 0)
+                        label.BackgroundTransparency = 1
+                        label.TextColor3 = Color3.fromRGB(255, 140, 0)
+                        label.TextStrokeTransparency = 0.2
+                        label.Font = Enum.Font.GothamBold
+                        label.TextSize = 12
+                        label.Text = "🍬 Candy Bowl"
+                        label.Parent = billboard
+
+                        billboard.Parent = billboard.Adornee
+                        Billboards[obj] = billboard
+
+                        obj.AncestryChanged:Connect(function(_, parent)
+                            if not parent then
+                                if billboard then billboard:Destroy() end
+                                ActiveTargets[obj] = nil
+                                Billboards[obj] = nil
+                            end
+                        end)
+                    end
+                end
             end
         end
     end
+
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        checkObject(obj)
+    end
+
+    Workspace.DescendantAdded:Connect(checkObject)
+
+    -- Render Loop for Distances
+    RunService.RenderStepped:Connect(function()
+        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
+        local hrp = LocalPlayer.Character.HumanoidRootPart
+
+        for target, _ in pairs(ActiveTargets) do
+            local billboard = Billboards[target]
+            if billboard and billboard:FindFirstChildOfClass("TextLabel") then
+                if ESPEnabled then
+                    billboard.Enabled = true
+                    local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.Position or target:GetPivot().Position) or target.Position
+                    local dist = math.floor((hrp.Position - pos).Magnitude)
+                    billboard.TextLabel.Text = "🍬 [" .. dist .. "m]"
+                else
+                    billboard.Enabled = false
+                end
+            end
+        end
+    end)
+
+    -- Auto-Walk Loop
+    task.spawn(function()
+        while task.wait(0.3) do
+            if AutoWalkEnabled and LocalPlayer.Character then
+                pcall(function()
+                    local char = LocalPlayer.Character
+                    local hrp = char:FindFirstChild("HumanoidRootPart")
+                    local humanoid = char:FindFirstChild("Humanoid")
+
+                    if hrp and humanoid then
+                        local closestPos = nil
+                        local shortestDist = math.huge
+
+                        for target, _ in pairs(ActiveTargets) do
+                            if target and target.Parent then
+                                local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.Position or target:GetPivot().Position) or target.Position
+                                local dist = (hrp.Position - pos).Magnitude
+                                if dist < shortestDist then
+                                    shortestDist = dist
+                                    closestPos = pos
+                                end
+                            end
+                        end
+
+                        if closestPos then
+                            humanoid:MoveTo(closestPos)
+                            local prompt = target:FindFirstChildOfClass("ProximityPrompt", true)
+                            if shortestDist <= 8 and prompt then
+                                fireproximityprompt(prompt)
+                            end
+                        end
+                    end
+                end)
+            end
+        end
+    end)
+
+    -- Button Toggles
+    espBtn.MouseButton1Click:Connect(function()
+        ESPEnabled = not ESPEnabled
+        espBtn.Text = ESPEnabled and "ESP: ON" or "ESP: OFF"
+        espBtn.TextColor3 = ESPEnabled and Color3.fromRGB(255, 140, 0) or Color3.fromRGB(140, 140, 150)
+    end)
+
+    autoBtn.MouseButton1Click:Connect(function()
+        AutoWalkEnabled = not AutoWalkEnabled
+        autoBtn.Text = AutoWalkEnabled and "AUTO-WALK: ON" or "AUTO-WALK: OFF"
+        autoBtn.TextColor3 = AutoWalkEnabled and Color3.fromRGB(50, 220, 50) or Color3.fromRGB(140, 140, 150)
+    end)
 end)
 
--- Auto-Walk Controller Loop
-task.spawn(function()
-    while task.wait(0.4) do
-        if AutoWalkEnabled and LocalPlayer.Character then
-            pcall(function()
-                local char = LocalPlayer.Character
-                local hrp = char:FindFirstChild("HumanoidRootPart")
-                local humanoid = char:FindFirstChild("Humanoid")
-
-                if hrp and humanoid then
-                    local closestPos = nil
-                    local shortestDist = math.huge
+if not success then
+    warn("CandyFarm UI Error: " .. tostring(err))
+end
