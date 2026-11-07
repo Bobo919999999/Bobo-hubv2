@@ -13,7 +13,6 @@ local ESPEnabled = true
 local AutoFarmEnabled = false
 local ProcessedItems = {}
 local ActiveBillboards = {}
-local ActiveLabels = {}
 local RainbowLabels = {}
 local TargetList = {}
 
@@ -129,25 +128,6 @@ local function isPlayerRelated(obj)
     return false
 end
 
-local function isCollectible(obj)
-    local parentName = obj.Parent and obj.Parent.Name:lower() or ""
-    if parentName:find("shop") or parentName:find("cosmetic") or parentName:find("map") or parentName:find("display") then
-        return false
-    end
-    
-    if obj:FindFirstChildOfClass("ProximityPrompt") or obj:FindFirstChildOfClass("TouchTransmitter") or obj:FindFirstChildOfClass("ClickDetector") then
-        return true
-    end
-    
-    for _, child in ipairs(obj:GetChildren()) do
-        if child:IsA("ProximityPrompt") or child:IsA("TouchTransmitter") or child:IsA("ClickDetector") then
-            return true
-        end
-    end
-
-    return false
-end
-
 local function createESP(target, isNewSpawn)
     if not target or ProcessedItems[target] then return end
     if isPlayerRelated(target) then return end
@@ -188,7 +168,6 @@ local function createESP(target, isNewSpawn)
 
     billboard.Parent = target
     ActiveBillboards[target] = billboard
-    ActiveLabels[target] = label
 
     local frameCounter = math.random(1, 5)
     local rainbowHue = 0
@@ -202,7 +181,6 @@ local function createESP(target, isNewSpawn)
         if ancestryConn then ancestryConn:Disconnect() end
         ProcessedItems[target] = nil
         ActiveBillboards[target] = nil
-        ActiveLabels[target] = nil
         RainbowLabels[label] = nil
         for i, v in ipairs(TargetList) do
             if v == target then
@@ -236,7 +214,7 @@ local function createESP(target, isNewSpawn)
         local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.Position or target:GetPivot().Position) or target.Position
         local dist = math.floor((hrp.Position - pos).Magnitude)
         
-        if dist > 400 then
+        if dist > 500 then
             billboard.Enabled = false
         else
             billboard.Enabled = ESPEnabled
@@ -249,19 +227,19 @@ local function scan(obj, isNewSpawn)
     if obj:IsA("BasePart") or obj:IsA("Model") then
         if isPlayerRelated(obj) then return end
         
+        local parentName = obj.Parent and obj.Parent.Name:lower() or ""
+        if parentName:find("shop") or parentName:find("display") then return end
+
         local n = obj.Name:lower()
         if (n:find("candy") or n:find("bowl") or n:find("basket") or n:find("bucket") or n:find("pail") or n:find("treat")) and not n:find("pumpkin") then
-            if isCollectible(obj) then
-                createESP(obj, isNewSpawn)
-            end
+            createESP(obj, isNewSpawn)
         end
     end
 end
 
--- Robust Auto-walk Loop
+-- Auto-walk Loop
 task.spawn(function()
-    while true do
-        task.wait(0.2)
+    while task.wait(0.3) do
         if AutoFarmEnabled then
             pcall(function()
                 local char = LocalPlayer.Character
@@ -269,7 +247,7 @@ task.spawn(function()
                     local hrp = char.HumanoidRootPart
                     local humanoid = char.Humanoid
                     
-                    local closestTarget = nil
+                    local closestPos = nil
                     local shortestDist = math.huge
 
                     for _, target in ipairs(TargetList) do
@@ -278,13 +256,13 @@ task.spawn(function()
                             local dist = (hrp.Position - pos).Magnitude
                             if dist < shortestDist then
                                 shortestDist = dist
-                                closestTarget = pos
+                                closestPos = pos
                             end
                         end
                     end
 
-                    if closestTarget then
-                        humanoid:MoveTo(closestTarget)
+                    if closestPos then
+                        humanoid:MoveTo(closestPos)
                     end
                 end
             end)
