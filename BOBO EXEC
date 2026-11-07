@@ -14,13 +14,13 @@ screenGui.ResetOnSpawn = false
 screenGui.Parent = CoreGui
 
 local button = Instance.new("TextButton")
-button.Size = UDim2.new(0, 180, 0, 50)
-button.Position = UDim2.new(0.5, -90, 0.1, 0)
+button.Size = UDim2.new(0, 200, 0, 50)
+button.Position = UDim2.new(0.5, -100, 0.1, 0)
 button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 button.TextColor3 = Color3.fromRGB(255, 140, 0)
 button.Font = Enum.Font.GothamBold
-button.TextSize = 14
-button.Text = "🍬 AUTO-WALK: OFF"
+button.TextSize = 13
+button.Text = "🍬 Targets: 0 | OFF"
 button.Active = true
 button.Draggable = true
 button.Parent = screenGui
@@ -31,48 +31,42 @@ corner.Parent = button
 
 local AutoWalkEnabled = false
 local TargetList = {}
+local ActiveTargets = {}
 
 button.MouseButton1Click:Connect(function()
     AutoWalkEnabled = not AutoWalkEnabled
     if AutoWalkEnabled then
-        button.Text = "🍬 AUTO-WALK: ON"
         button.TextColor3 = Color3.fromRGB(50, 255, 50)
     else
-        button.Text = "🍬 AUTO-WALK: OFF"
         button.TextColor3 = Color3.fromRGB(255, 140, 0)
     end
 end)
 
+local function isInsideShop(obj)
+    local ancestor = obj
+    while ancestor and ancestor ~= Workspace do
+        local name = ancestor.Name:lower()
+        if name:find("shop") or name:find("store") or name:find("interior") or name:find("merchant") or name:find("spirit") or name:find("hallow") or name:find("vendor") or name:find("exchange") or name:find("booth") then
+            return true
+        end
+        ancestor = ancestor.Parent
+    end
+    return false
+end
+
 local function scan(obj)
     if obj:IsA("BasePart") or obj:IsA("Model") then
-        -- 1. Strict Ancestry Blacklist
-        local ancestor = obj
-        while ancestor and ancestor ~= Workspace do
-            local aname = ancestor.Name:lower()
-            if aname:find("spirit") or aname:find("hallow") or aname:find("shop") or aname:find("vendor") or aname:find("store") or aname:find("exchange") or aname:find("booth") or aname:find("reward") then
-                return 
-            end
-            ancestor = ancestor.Parent
-        end
-
-        -- 2. Name check for candy containers
+        if isInsideShop(obj) then return end
+        
         local n = obj.Name:lower()
         if (n:find("candy") or n:find("bowl") or n:find("basket") or n:find("bucket") or n:find("pail") or n:find("treat")) and not n:find("pumpkin") then
-            local prompt = obj:FindFirstChildOfClass("ProximityPrompt", true)
-            if prompt then
-                -- 3. Prompt Action Text Filter (Blocks shops, exchanges, and rewards)
-                local actionText = (prompt.ActionText or ""):lower()
-                local objectText = (prompt.ObjectText or ""):lower()
-                
-                if actionText:find("buy") or actionText:find("exchange") or actionText:find("trade") or 
-                   actionText:find("claim") or actionText:find("reward") or actionText:find("talk") or 
-                   objectText:find("shop") or objectText:find("store") or objectText:find("token") then
-                    return
-                end
-
+            if not ActiveTargets[obj] then
+                ActiveTargets[obj] = true
                 table.insert(TargetList, obj)
+
                 obj.AncestryChanged:Connect(function(_, parent)
                     if not parent then
+                        ActiveTargets[obj] = nil
                         for i, v in ipairs(TargetList) do
                             if v == obj then
                                 table.remove(TargetList, i)
@@ -92,19 +86,26 @@ end
 
 Workspace.DescendantAdded:Connect(scan)
 
--- Auto-walk Loop
+-- Core Auto-Walk & UI Status Loop
 task.spawn(function()
-    while task.wait(0.3) do
-        if AutoWalkEnabled then
-            pcall(function()
+    while task.wait(0.2) do
+        pcall(function()
+            local count = #TargetList
+            if not AutoWalkEnabled then
+                button.Text = "🍬 Targets: " .. count .. " | OFF"
+            else
+                button.Text = "🍬 Targets: " .. count .. " | ON"
+            end
+
+            if AutoWalkEnabled and LocalPlayer.Character then
                 local char = LocalPlayer.Character
-                if char and char:FindFirstChild("Humanoid") and char:FindFirstChild("HumanoidRootPart") then
-                    local hrp = char.HumanoidRootPart
-                    local humanoid = char.Humanoid
-                    
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                local humanoid = char:FindFirstChild("Humanoid")
+
+                if hrp and humanoid then
                     local closestPos = nil
                     local shortestDist = math.huge
-                    local targetPrompt = nil
+                    local targetObj = nil
 
                     for _, target in ipairs(TargetList) do
                         if target and target.Parent then
@@ -113,23 +114,24 @@ task.spawn(function()
                             if dist < shortestDist then
                                 shortestDist = dist
                                 closestPos = pos
-                                targetPrompt = target:FindFirstChildOfClass("ProximityPrompt", true)
+                                targetObj = target
                             end
                         end
                     end
 
                     if closestPos then
                         humanoid:MoveTo(closestPos)
-                        if shortestDist <= 8 and targetPrompt then
-                            local aText = (targetPrompt.ActionText or ""):lower()
-                            -- Double check action text before firing prompt
-                            if not aText:find("buy") and not aText:find("exchange") and not aText:find("reward") then
-                                fireproximityprompt(targetPrompt)
+                        
+                        -- Fire ProximityPrompt if close enough
+                        if targetObj then
+                            local prompt = targetObj:FindFirstChildOfClass("ProximityPrompt", true)
+                            if shortestDist <= 10 and prompt then
+                                fireproximityprompt(prompt)
                             end
                         end
                     end
                 end
-            end)
-        end
+            end
+        end)
     end
 end)
