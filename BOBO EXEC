@@ -5,117 +5,213 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
-if PlayerGui:FindFirstChild("CandyESPGui") then
-    PlayerGui.CandyESPGui:Destroy()
+if PlayerGui:FindFirstChild("CleanESP") then
+    PlayerGui.CleanESP:Destroy()
 end
 
-local Settings = {
-    ESPEnabled = true,
-    ShowDistance = true,
-    TextSize = 12,
-    MaxDistance = 300,
-    Color = Color3.fromRGB(255, 105, 180)
-}
-
-local ProcessedCandies = {}
+local ESPEnabled = true
+local ProcessedItems = {}
 local ActiveBillboards = {}
 local ActiveLabels = {}
+local RainbowLabels = {} -- Tracks items that should have rainbow colors
 
+-- Color presets for manual selection
+local Colors = {
+    {Name = "Orange", Color = Color3.fromRGB(255, 165, 0)},
+    {Name = "Pink",   Color = Color3.fromRGB(255, 105, 180)},
+    {Name = "Cyan",   Color = Color3.fromRGB(0, 255, 255)},
+    {Name = "Green",  Color = Color3.fromRGB(50, 255, 50)},
+    {Name = "Yellow", Color = Color3.fromRGB(255, 215, 0)}
+}
+local currentColorIndex = 1
+
+-- Screen GUI setup
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "CandyESPGui"
+screenGui.Name = "CleanESP"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = PlayerGui
 
--- Simple toggle button to confirm UI loads
-local toggleButton = Instance.new("TextButton")
-toggleButton.Size = UDim2.new(0, 120, 0, 35)
-toggleButton.Position = UDim2.new(0, 15, 0.3, 0)
-toggleButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-toggleButton.TextColor3 = Color3.fromRGB(255, 105, 180)
-toggleButton.Font = Enum.Font.SourceSansBold
-toggleButton.TextSize = 14
-toggleButton.Text = "🍬 ESP: ON"
-toggleButton.Parent = screenGui
+-- Notification Banner Setup
+local notifyLabel = Instance.new("TextLabel")
+notifyLabel.Size = UDim2.new(0, 250, 0, 35)
+notifyLabel.Position = UDim2.new(0.5, -125, 0.05, 0)
+notifyLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+notifyLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+notifyLabel.Font = Enum.Font.SourceSansBold
+notifyLabel.TextSize = 14
+notifyLabel.Text = "🌈 Candy Bowl Spawned!"
+notifyLabel.Visible = false
+notifyLabel.Parent = screenGui
 
-toggleButton.MouseButton1Click:Connect(function()
-    Settings.ESPEnabled = not Settings.ESPEnabled
-    toggleButton.Text = Settings.ESPEnabled and "🍬 ESP: ON" or "🍬 ESP: OFF"
-    for _, billboard in pairs(ActiveBillboards) do
-        if billboard then billboard.Enabled = Settings.ESPEnabled end
+local notifyCorner = Instance.new("UICorner")
+notifyCorner.CornerRadius = UDim.new(0, 8)
+notifyCorner.Parent = notifyLabel
+
+local function showNotification(itemName)
+    notifyLabel.Text = "🌈 Rainbow Bowl: " .. itemName
+    notifyLabel.Visible = true
+    task.delay(3, function()
+        notifyLabel.Visible = false
+    end)
+end
+
+-- Draggable Control Panel
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 120, 0, 75)
+mainFrame.Position = UDim2.new(0, 15, 0.3, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 6)
+corner.Parent = mainFrame
+
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Size = UDim2.new(0.9, 0, 0, 30)
+toggleBtn.Position = UDim2.new(0.05, 0, 0, 5)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+toggleBtn.TextColor3 = Color3.fromRGB(255, 150, 50)
+toggleBtn.Font = Enum.Font.SourceSansBold
+toggleBtn.TextSize = 13
+toggleBtn.Text = "🍬 ESP: ON"
+toggleBtn.Parent = mainFrame
+
+local colorBtn = Instance.new("TextButton")
+colorBtn.Size = UDim2.new(0.9, 0, 0, 30)
+colorBtn.Position = UDim2.new(0.05, 0, 0, 40)
+colorBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+colorBtn.TextColor3 = Colors[currentColorIndex].Color
+colorBtn.Font = Enum.Font.SourceSansBold
+colorBtn.TextSize = 13
+colorBtn.Text = "🎨 Color: Orange"
+colorBtn.Parent = mainFrame
+
+local function updateAllColors()
+    local newColor = Colors[currentColorIndex].Color
+    for label, isRainbow in pairs(RainbowLabels) do
+        -- Only apply manual color if it's NOT a freshly spawned rainbow bowl
+        if not isRainbow and label and label.Parent then
+            label.TextColor3 = newColor
+        end
     end
-end)
+end
 
-local function createESP(target)
-    if not target or ProcessedCandies[target] then return end
-    ProcessedCandies[target] = true
+local function createESP(target, isNewSpawn)
+    if not target or ProcessedItems[target] then return end
+    ProcessedItems[target] = true
+
+    if isNewSpawn then
+        showNotification(target.Name)
+    end
 
     local billboard = Instance.new("BillboardGui")
-    billboard.Name = "CandyBillboard"
+    billboard.Name = "ESPTag"
     billboard.Adornee = target
-    billboard.Size = UDim2.new(0, 120, 0, 35)
+    billboard.Size = UDim2.new(0, 100, 0, 30)
     billboard.StudsOffset = Vector3.new(0, 2, 0)
     billboard.AlwaysOnTop = true
-    billboard.Enabled = Settings.ESPEnabled
+    billboard.Enabled = ESPEnabled
 
     local label = Instance.new("TextLabel")
     label.Size = UDim2.new(1, 0, 1, 0)
     label.BackgroundTransparency = 1
-    label.TextColor3 = Settings.Color
-    label.TextStrokeTransparency = 0.5
-    label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    
+    -- Newly spawned candy bowls get marked as rainbow
+    local isRainbow = isNewSpawn
+    RainbowLabels[label] = isRainbow
+
+    if isRainbow then
+        label.TextColor3 = Color3.fromHSV(0, 1, 1)
+    else
+        label.TextColor3 = Colors[currentColorIndex].Color
+    end
+
+    label.TextStrokeTransparency = 0.3
     label.Font = Enum.Font.SourceSansBold
-    label.TextSize = Settings.TextSize
-    label.Text = "🍬 " .. target.Name
+    label.TextSize = 12
+    label.Text = "🍬 Target"
     label.Parent = billboard
 
     billboard.Parent = target
     ActiveBillboards[target] = billboard
     ActiveLabels[target] = label
 
-    local connection
-    connection = RunService.RenderStepped:Connect(function()
+    local frameCounter = math.random(1, 5)
+    local rainbowHue = 0
+
+    local conn
+    conn = RunService.RenderStepped:Connect(function(dt)
         if not target or not target.Parent or not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
             if billboard then billboard:Destroy() end
-            if connection then connection:Disconnect() end
-            ProcessedCandies[target] = nil
+            if conn then conn:Disconnect() end
+            ProcessedItems[target] = nil
             ActiveBillboards[target] = nil
             ActiveLabels[target] = nil
+            RainbowLabels[label] = nil
             return
         end
 
-        if not Settings.ESPEnabled then return end
+        -- Animate rainbow color smoothly if it's a new spawn bowl
+        if isRainbow and label and label.Parent then
+            rainbowHue = (rainbowHue + dt * 0.5) % 1
+            label.TextColor3 = Color3.fromHSV(rainbowHue, 1, 1)
+        end
+
+        frameCounter = frameCounter + 1
+        if frameCounter % 5 ~= 0 then return end
 
         local hrp = LocalPlayer.Character.HumanoidRootPart
         local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.Position or target:GetPivot().Position) or target.Position
         local dist = math.floor((hrp.Position - pos).Magnitude)
-
-        if dist > Settings.MaxDistance then
+        
+        if dist > 200 then
             billboard.Enabled = false
         else
-            billboard.Enabled = Settings.ESPEnabled
-            if Settings.ShowDistance then
-                label.Text = "🍬 " .. target.Name .. "\n[" .. dist .. "s]"
-            else
-                label.Text = "🍬 " .. target.Name
-            end
+            billboard.Enabled = ESPEnabled
+            label.Text = "🍬 [" .. dist .. "s]"
         end
     end)
 end
 
-local function checkObject(obj)
+local function scan(obj, isNewSpawn)
     if obj:IsA("BasePart") or obj:IsA("Model") then
-        local name = obj.Name:lower()
-        -- Added more generic checks just in case
-        if name:find("candy") or name:find("sweet") or name:find("treat") or name:find("spawn") then
-            createESP(obj)
+        local n = obj.Name:lower()
+        if (n:find("candy") or n:find("bowl") or n:find("basket") or n:find("bucket") or n:find("pail") or n:find("treat")) and not n:find("pumpkin") then
+            createESP(obj, isNewSpawn)
         end
     end
 end
 
--- Scan descendants instead of just children (catches items inside folders)
-for _, obj in ipairs(Workspace:GetDescendants()) do
-    checkObject(obj)
+-- Button Controls
+toggleBtn.MouseButton1Click:Connect(function()
+    ESPEnabled = not ESPEnabled
+    toggleBtn.Text = ESPEnabled and "🍬 ESP: ON" or "🍬 ESP: OFF"
+    for _, b in pairs(ActiveBillboards) do
+        if b then b.Enabled = ESPEnabled end
+    end
+end)
+
+colorBtn.MouseButton1Click:Connect(function()
+    currentColorIndex = (currentColorIndex % #Colors) + 1
+    local choice = Colors[currentColorIndex]
+    colorBtn.Text = "🎨 Color: " .. choice.Name
+    colorBtn.TextColor3 = choice.Color
+    toggleBtn.TextColor3 = choice.Color
+    updateAllColors()
+end)
+
+-- Scan existing items on load (treated as normal color state)
+for _, obj in ipairs(Workspace:GetChildren()) do
+    scan(obj, false)
+    for _, child in ipairs(obj:GetChildren()) do
+        scan(child, false)
+    end
 end
 
-Workspace.DescendantAdded:Connect(checkObject)
-print("Candy ESP Loaded Successfully!")
+-- Notify and turn rainbow when new items spawn live during the game
+Workspace.ChildAdded:Connect(function(child)
+    scan(child, true)
+end)
