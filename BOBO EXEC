@@ -1,45 +1,80 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
+local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 
-if CoreGui:FindFirstChild("CandyFarmCore") then
-    CoreGui.CandyFarmCore:Destroy()
+-- Clean up older GUI instances
+if CoreGui:FindFirstChild("CandyESPUI") then
+    CoreGui.CandyESPUI:Destroy()
 end
 
+-- Core ScreenGui Setup
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "CandyFarmCore"
+screenGui.Name = "CandyESPUI"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = CoreGui
 
-local button = Instance.new("TextButton")
-button.Size = UDim2.new(0, 200, 0, 50)
-button.Position = UDim2.new(0.5, -100, 0.1, 0)
-button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-button.TextColor3 = Color3.fromRGB(255, 140, 0)
-button.Font = Enum.Font.GothamBold
-button.TextSize = 13
-button.Text = "🍬 Targets: 0 | OFF"
-button.Active = true
-button.Draggable = true
-button.Parent = screenGui
+-- Notification Container
+local notifHolder = Instance.new("Frame")
+notifHolder.Name = "NotifHolder"
+notifHolder.Size = UDim2.new(0, 250, 0, 300)
+notifHolder.Position = UDim2.new(1, -260, 1, -310)
+notifHolder.BackgroundTransparency = 1
+notifHolder.Parent = screenGui
 
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 8)
-corner.Parent = button
+local notifLayout = Instance.new("UIListLayout")
+notifLayout.SortOrder = Enum.SortOrder.LayoutOrder
+notifLayout.Padding = UDim.new(0, 6)
+notifLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+notifLayout.Parent = notifHolder
 
-local AutoWalkEnabled = false
-local TargetList = {}
-local ActiveTargets = {}
-local BlacklistedTargets = {}
+-- Send On-Screen Notification
+local function notify(itemName)
+    local card = Instance.new("Frame")
+    card.Size = UDim2.new(1, 0, 0, 40)
+    card.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    card.BorderSizePixel = 0
+    card.Parent = notifHolder
 
-button.MouseButton1Click:Connect(function()
-    AutoWalkEnabled = not AutoWalkEnabled
-    button.TextColor3 = AutoWalkEnabled and Color3.fromRGB(50, 255, 50) or Color3.fromRGB(255, 140, 0)
-end)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = card
 
--- Whitelisted target object names (cleaned of spaces/lowercased)
+    local gradient = Instance.new("UIGradient")
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 40, 40)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 10, 10))
+    })
+    gradient.Rotation = 90
+    gradient.Parent = card
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -10, 1, 0)
+    label.Position = UDim2.new(0, 10, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 13
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Text = "🍬 Spawned: " .. itemName
+    label.Parent = card
+
+    -- Fade out & cleanup animation
+    task.delay(4, function()
+        local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local tween = TweenService:Create(card, tweenInfo, {BackgroundTransparency = 1})
+        local textTween = TweenService:Create(label, tweenInfo, {TextTransparency = 1})
+        tween:Play()
+        textTween:Play()
+        tween.Completed:Connect(function()
+            card:Destroy()
+        end)
+    end)
+end
+
+-- Valid Targets List
 local VALID_TARGETS = {
     candybasket = true,
     candybag = true,
@@ -47,143 +82,104 @@ local VALID_TARGETS = {
     pumpkin = true
 }
 
-local function isPlayerRelated(obj)
-    local ancestor = obj
-    while ancestor and ancestor ~= Workspace do
-        if Players:GetPlayerFromCharacter(ancestor) or ancestor:IsA("Player") then
-            return true
-        end
-        ancestor = ancestor.Parent
-    end
-    return false
-end
+local ESP_Folder = Instance.new("Folder")
+ESP_Folder.Name = "CandyESP_Folder"
+ESP_Folder.Parent = CoreGui
 
-local function isBlacklistedArea(obj)
-    local ancestor = obj
-    while ancestor and ancestor ~= Workspace do
-        local aname = ancestor.Name:lower()
-        if aname:find("spirit") or aname:find("hallow") or aname:find("shop") or 
-           aname:find("vendor") or aname:find("store") or aname:find("merchant") or 
-           aname:find("exchange") or aname:find("booth") or aname:find("display") or 
-           aname:find("cosmetic") or aname:find("interior") then
-            return true
-        end
-        ancestor = ancestor.Parent
-    end
-    return false
-end
+local function createESP(obj, isBasket)
+    if not obj or not obj.Parent then return end
 
-local function scan(obj)
-    if obj:IsA("BasePart") or obj:IsA("Model") then
-        if isPlayerRelated(obj) or isBlacklistedArea(obj) then return end
-        
-        local cleanName = obj.Name:lower():gsub("%s+", "")
-        
-        if VALID_TARGETS[cleanName] then
-            local prompt = obj:FindFirstChildOfClass("ProximityPrompt", true)
-            if prompt then
-                local actionText = (prompt.ActionText or ""):lower()
-                local objectText = (prompt.ObjectText or ""):lower()
-                
-                -- Skip non-collectible interaction prompts
-                if actionText:find("buy") or actionText:find("equip") or actionText:find("try") or 
-                   actionText:find("exchange") or actionText:find("purchase") or actionText:find("talk") or 
-                   objectText:find("shop") or objectText:find("token") then
-                    return
-                end
+    local bb = Instance.new("BillboardGui")
+    bb.Name = "ESP_" .. obj.Name
+    bb.Adornee = obj
+    bb.AlwaysOnTop = true
+    bb.Size = UDim2.new(0, 120, 0, 45)
+    bb.StudsOffset = Vector3.new(0, 3.5, 0)
+    bb.Parent = ESP_Folder
 
-                if not ActiveTargets[obj] then
-                    ActiveTargets[obj] = true
-                    table.insert(TargetList, obj)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 1, 0)
+    frame.BorderSizePixel = 0
+    frame.Parent = bb
 
-                    obj.AncestryChanged:Connect(function(_, parent)
-                        if not parent then
-                            ActiveTargets[obj] = nil
-                            BlacklistedTargets[obj] = nil
-                            for i, v in ipairs(TargetList) do
-                                if v == obj then
-                                    table.remove(TargetList, i)
-                                    break
-                                end
-                            end
-                        end
-                    end)
-                end
-            end
-        end
-    end
-end
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = frame
 
-for _, obj in ipairs(Workspace:GetDescendants()) do
-    scan(obj)
-end
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 13
+    label.Text = obj.Name
+    label.Parent = frame
 
-Workspace.DescendantAdded:Connect(scan)
+    if isBasket then
+        -- Dark Gray with Black Gradient for CandyBasket
+        frame.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        label.TextColor3 = Color3.fromRGB(255, 255, 255)
 
--- Stuck Prevention & Pathing Variables
-local currentTarget = nil
-local targetTime = 0
-local lastPos = Vector3.zero
+        local blackGradient = Instance.new("UIGradient")
+        blackGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(70, 70, 70)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
+        })
+        blackGradient.Rotation = 90
+        blackGradient.Parent = frame
+    else
+        -- Rainbow Gradient for other items (CandyBag, CandyBowl, Pumpkin)
+        frame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        label.TextColor3 = Color3.fromRGB(255, 255, 255)
 
--- Core Auto-Walk Loop
-task.spawn(function()
-    while task.wait(0.2) do
-        pcall(function()
-            -- Clean out any invalid targets from list count
-            local validCount = 0
-            for _, t in ipairs(TargetList) do
-                if t and t.Parent and not BlacklistedTargets[t] then
-                    validCount = validCount + 1
-                end
-            end
+        local rainbowGradient = Instance.new("UIGradient")
+        rainbowGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+            ColorSequenceKeypoint.new(0.2, Color3.fromRGB(255, 165, 0)),
+            ColorSequenceKeypoint.new(0.4, Color3.fromRGB(255, 255, 0)),
+            ColorSequenceKeypoint.new(0.6, Color3.fromRGB(0, 255, 0)),
+            ColorSequenceKeypoint.new(0.8, Color3.fromRGB(0, 0, 255)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(238, 130, 238))
+        })
+        rainbowGradient.Parent = frame
 
-            button.Text = "🍬 Targets: " .. validCount .. " | " .. (AutoWalkEnabled and "ON" or "OFF")
-
-            if AutoWalkEnabled and LocalPlayer.Character then
-                local char = LocalPlayer.Character
-                local hrp = char:FindFirstChild("HumanoidRootPart")
-                local humanoid = char:FindFirstChild("Humanoid")
-
-                if hrp and humanoid then
-                    local closestPos = nil
-                    local shortestDist = math.huge
-                    local selectedObj = nil
-
-                    for _, target in ipairs(TargetList) do
-                        if target and target.Parent and not BlacklistedTargets[target] then
-                            local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.Position or target:GetPivot().Position) or target.Position
-                            local dist = (hrp.Position - pos).Magnitude
-                            if dist < shortestDist then
-                                shortestDist = dist
-                                closestPos = pos
-                                selectedObj = target
-                            end
-                        end
-                    end
-
-                    if selectedObj and closestPos then
-                        -- Check if we got stuck trying to reach the same target for over 5 seconds
-                        if currentTarget == selectedObj then
-                            if tick() - targetTime > 5 and (hrp.Position - lastPos).Magnitude < 2 then
-                                BlacklistedTargets[selectedObj] = true
-                                currentTarget = nil
-                                return
-                            end
-                        else
-                            currentTarget = selectedObj
-                            targetTime = tick()
-                            lastPos = hrp.Position
-                        end
-
-                        humanoid:MoveTo(closestPos)
-                        
-                        local prompt = selectedObj:FindFirstChildOfClass("ProximityPrompt", true)
-                        if shortestDist <= 10 and prompt then
-                            fireproximityprompt(prompt)
-                        end
-                    end
-                end
+        -- Animate Rainbow Gradient
+        task.spawn(function()
+            while bb and bb.Parent do
+                rainbowGradient.Rotation = (rainbowGradient.Rotation + 4) % 360
+                task.wait(0.03)
             end
         end)
     end
+
+    -- Automatically remove ESP when target is despawned/collected
+    obj.AncestryChanged:Connect(function(_, parent)
+        if not parent then
+            bb:Destroy()
+        end
+    end)
+end
+
+local function scan(obj, isNewSpawn)
+    if obj:IsA("BasePart") or obj:IsA("Model") then
+        local cleanName = obj.Name:lower():gsub("%s+", "")
+        
+        if VALID_TARGETS[cleanName] then
+            local isBasket = (cleanName == "candybasket")
+            createESP(obj, isBasket)
+
+            if isNewSpawn then
+                notify(obj.Name)
+            end
+        end
+    end
+end
+
+-- Scan initial map items
+for _, obj in ipairs(Workspace:GetDescendants()) do
+    scan(obj, false)
+end
+
+-- Detect live spawns
+Workspace.DescendantAdded:Connect(function(obj)
+    scan(obj, true)
 end)
