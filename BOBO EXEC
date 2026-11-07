@@ -20,7 +20,7 @@ button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 button.TextColor3 = Color3.fromRGB(255, 140, 0)
 button.Font = Enum.Font.GothamBold
 button.TextSize = 13
-button.Text = "🍬 Baskets: 0 | OFF"
+button.Text = "🍬 Targets: 0 | OFF"
 button.Active = true
 button.Draggable = true
 button.Parent = screenGui
@@ -32,11 +32,20 @@ corner.Parent = button
 local AutoWalkEnabled = false
 local TargetList = {}
 local ActiveTargets = {}
+local BlacklistedTargets = {}
 
 button.MouseButton1Click:Connect(function()
     AutoWalkEnabled = not AutoWalkEnabled
     button.TextColor3 = AutoWalkEnabled and Color3.fromRGB(50, 255, 50) or Color3.fromRGB(255, 140, 0)
 end)
+
+-- Whitelisted target object names (cleaned of spaces/lowercased)
+local VALID_TARGETS = {
+    candybasket = true,
+    candybag = true,
+    candybowl = true,
+    pumpkin = true
+}
 
 local function isPlayerRelated(obj)
     local ancestor = obj
@@ -49,50 +58,37 @@ local function isPlayerRelated(obj)
     return false
 end
 
-local function isMapDecorationOrShop(obj)
-    local name = obj.Name:lower()
-    
-    -- Ban static map decorations, meshes, and pumpkin props
-    if name:find("decoration") or name:find("prop") or name:find("mesh") or name:find("static") or 
-       name:find("pumpkin") or name:find("cosmetic") or name:find("hat") or name:find("head") then
-        return true
-    end
-
-    -- Check parent folders for shops, merchants, or spirit stores
+local function isBlacklistedArea(obj)
     local ancestor = obj
     while ancestor and ancestor ~= Workspace do
         local aname = ancestor.Name:lower()
-        if aname:find("shop") or aname:find("store") or aname:find("merchant") or 
-           aname:find("spirit") or aname:find("hallow") or aname:find("exchange") or 
-           aname:find("booth") or aname:find("vendor") then
+        if aname:find("spirit") or aname:find("hallow") or aname:find("shop") or 
+           aname:find("vendor") or aname:find("store") or aname:find("merchant") or 
+           aname:find("exchange") or aname:find("booth") or aname:find("display") or 
+           aname:find("cosmetic") or aname:find("interior") then
             return true
         end
         ancestor = ancestor.Parent
     end
-    
     return false
 end
 
 local function scan(obj)
     if obj:IsA("BasePart") or obj:IsA("Model") then
-        if isPlayerRelated(obj) then return end
-        if isMapDecorationOrShop(obj) then return end
+        if isPlayerRelated(obj) or isBlacklistedArea(obj) then return end
         
-        local n = obj.Name:lower()
+        local cleanName = obj.Name:lower():gsub("%s+", "")
         
-        -- Specifically target Candy Baskets / active collectible bowls while avoiding map props
-        local isTargetItem = (n:find("basket") or (n:find("candy") and n:find("bowl"))) and not n:find("pumpkin")
-        
-        if isTargetItem then
+        if VALID_TARGETS[cleanName] then
             local prompt = obj:FindFirstChildOfClass("ProximityPrompt", true)
             if prompt then
                 local actionText = (prompt.ActionText or ""):lower()
                 local objectText = (prompt.ObjectText or ""):lower()
                 
-                -- Reject shop prompts, equips, or rewards
-                if actionText:find("buy") or actionText:find("purchase") or actionText:find("equip") or 
-                   actionText:find("try") or actionText:find("exchange") or actionText:find("trade") or 
-                   actionText:find("talk") or objectText:find("shop") or objectText:find("token") then
+                -- Skip non-collectible interaction prompts
+                if actionText:find("buy") or actionText:find("equip") or actionText:find("try") or 
+                   actionText:find("exchange") or actionText:find("purchase") or actionText:find("talk") or 
+                   objectText:find("shop") or objectText:find("token") then
                     return
                 end
 
@@ -103,6 +99,7 @@ local function scan(obj)
                     obj.AncestryChanged:Connect(function(_, parent)
                         if not parent then
                             ActiveTargets[obj] = nil
+                            BlacklistedTargets[obj] = nil
                             for i, v in ipairs(TargetList) do
                                 if v == obj then
                                     table.remove(TargetList, i)
@@ -123,12 +120,24 @@ end
 
 Workspace.DescendantAdded:Connect(scan)
 
+-- Stuck Prevention & Pathing Variables
+local currentTarget = nil
+local targetTime = 0
+local lastPos = Vector3.zero
+
 -- Core Auto-Walk Loop
 task.spawn(function()
     while task.wait(0.2) do
         pcall(function()
-            local count = #TargetList
-            button.Text = "🍬 Baskets: " .. count .. " | " .. (AutoWalkEnabled and "ON" or "OFF")
+            -- Clean out any invalid targets from list count
+            local validCount = 0
+            for _, t in ipairs(TargetList) do
+                if t and t.Parent and not BlacklistedTargets[t] then
+                    validCount = validCount + 1
+                end
+            end
+
+            button.Text = "🍬 Targets: " .. validCount .. " | " .. (AutoWalkEnabled and "ON" or "OFF")
 
             if AutoWalkEnabled and LocalPlayer.Character then
                 local char = LocalPlayer.Character
@@ -138,27 +147,39 @@ task.spawn(function()
                 if hrp and humanoid then
                     local closestPos = nil
                     local shortestDist = math.huge
-                    local targetObj = nil
+                    local selectedObj = nil
 
                     for _, target in ipairs(TargetList) do
-                        if target and target.Parent then
+                        if target and target.Parent and not BlacklistedTargets[target] then
                             local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.Position or target:GetPivot().Position) or target.Position
                             local dist = (hrp.Position - pos).Magnitude
                             if dist < shortestDist then
                                 shortestDist = dist
                                 closestPos = pos
-                                targetObj = target
+                                selectedObj = target
                             end
                         end
                     end
 
-                    if closestPos then
-                        humanoid:MoveTo(closestPos)
-                        if targetObj then
-                            local prompt = targetObj:FindFirstChildOfClass("ProximityPrompt", true)
-                            if shortestDist <= 10 and prompt then
-                                fireproximityprompt(prompt)
+                    if selectedObj and closestPos then
+                        -- Check if we got stuck trying to reach the same target for over 5 seconds
+                        if currentTarget == selectedObj then
+                            if tick() - targetTime > 5 and (hrp.Position - lastPos).Magnitude < 2 then
+                                BlacklistedTargets[selectedObj] = true
+                                currentTarget = nil
+                                return
                             end
+                        else
+                            currentTarget = selectedObj
+                            targetTime = tick()
+                            lastPos = hrp.Position
+                        end
+
+                        humanoid:MoveTo(closestPos)
+                        
+                        local prompt = selectedObj:FindFirstChildOfClass("ProximityPrompt", true)
+                        if shortestDist <= 10 and prompt then
+                            fireproximityprompt(prompt)
                         end
                     end
                 end
