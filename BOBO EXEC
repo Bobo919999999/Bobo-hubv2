@@ -15,7 +15,6 @@ local ActiveBillboards = {}
 local ActiveLabels = {}
 local RainbowLabels = {}
 
--- Color presets
 local Colors = {
     {Name = "Orange", Color = Color3.fromRGB(255, 165, 0)},
     {Name = "Pink",   Color = Color3.fromRGB(255, 105, 180)},
@@ -25,20 +24,19 @@ local Colors = {
 }
 local currentColorIndex = 1
 
--- Screen GUI setup
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "CleanESP"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = PlayerGui
 
--- Notification Banner (Centered near top)
+-- Notification Banner at top center
 local notifyLabel = Instance.new("TextLabel")
-notifyLabel.Size = UDim2.new(0, 260, 0, 35)
-notifyLabel.Position = UDim2.new(0.5, -130, 0.1, 0)
-notifyLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+notifyLabel.Size = UDim2.new(0, 280, 0, 40)
+notifyLabel.Position = UDim2.new(0.5, -140, 0.08, 0)
+notifyLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 notifyLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
 notifyLabel.Font = Enum.Font.SourceSansBold
-notifyLabel.TextSize = 14
+notifyLabel.TextSize = 15
 notifyLabel.Text = "🌈 Candy Bowl Spawned!"
 notifyLabel.Visible = false
 notifyLabel.Parent = screenGui
@@ -55,24 +53,34 @@ local function showNotification(itemName)
     end)
 end
 
--- Draggable Control Panel (Safely positioned clearly on screen, not stuck in a corner)
+-- Control Panel pinned safely in the middle-left (impossible to lose)
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 130, 0, 80)
-mainFrame.Position = UDim2.new(0.05, 0, 0.4, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+mainFrame.Size = UDim2.new(0, 140, 0, 90)
+mainFrame.Position = UDim2.new(0, 20, 0.4, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
 mainFrame.Draggable = true
 mainFrame.Parent = screenGui
 
 local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 6)
+corner.CornerRadius = UDim.new(0, 8)
 corner.Parent = mainFrame
 
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 0, 20)
+titleLabel.Position = UDim2.new(0, 0, 0, 2)
+titleLabel.BackgroundTransparency = 1
+titleLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+titleLabel.Font = Enum.Font.SourceSansBold
+titleLabel.TextSize = 11
+titleLabel.Text = "RE: Heads Please ESP"
+titleLabel.Parent = mainFrame
+
 local toggleBtn = Instance.new("TextButton")
-toggleBtn.Size = UDim2.new(0.9, 0, 0, 32)
-toggleBtn.Position = UDim2.new(0.05, 0, 0, 6)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+toggleBtn.Size = UDim2.new(0.9, 0, 0, 28)
+toggleBtn.Position = UDim2.new(0.05, 0, 0, 24)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 toggleBtn.TextColor3 = Color3.fromRGB(255, 150, 50)
 toggleBtn.Font = Enum.Font.SourceSansBold
 toggleBtn.TextSize = 13
@@ -80,9 +88,9 @@ toggleBtn.Text = "🍬 ESP: ON"
 toggleBtn.Parent = mainFrame
 
 local colorBtn = Instance.new("TextButton")
-colorBtn.Size = UDim2.new(0.9, 0, 0, 32)
-colorBtn.Position = UDim2.new(0.05, 0, 0, 42)
-colorBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+colorBtn.Size = UDim2.new(0.9, 0, 0, 28)
+colorBtn.Position = UDim2.new(0.05, 0, 0, 56)
+colorBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 colorBtn.TextColor3 = Colors[currentColorIndex].Color
 colorBtn.Font = Enum.Font.SourceSansBold
 colorBtn.TextSize = 13
@@ -164,7 +172,7 @@ local function createESP(target, isNewSpawn)
         local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.Position or target:GetPivot().Position) or target.Position
         local dist = math.floor((hrp.Position - pos).Magnitude)
         
-        if dist > 300 then
+        if dist > 400 then
             billboard.Enabled = false
         else
             billboard.Enabled = ESPEnabled
@@ -176,14 +184,12 @@ end
 local function scan(obj, isNewSpawn)
     if obj:IsA("BasePart") or obj:IsA("Model") then
         local n = obj.Name:lower()
-        -- Broadened filter to make sure nothing gets missed
         if n:find("candy") or n:find("bowl") or n:find("basket") or n:find("bucket") or n:find("pail") or n:find("treat") or n:find("pumpkin") then
             createESP(obj, isNewSpawn)
         end
     end
 end
 
--- Button Controls
 toggleBtn.MouseButton1Click:Connect(function()
     ESPEnabled = not ESPEnabled
     toggleBtn.Text = ESPEnabled and "🍬 ESP: ON" or "🍬 ESP: OFF"
@@ -201,12 +207,10 @@ colorBtn.MouseButton1Click:Connect(function()
     updateAllColors()
 end)
 
--- Deep scan all existing items using GetDescendants so nothing is missed
 for _, obj in ipairs(Workspace:GetDescendants()) do
     scan(obj, false)
 end
 
--- Listen for newly added items anywhere in the workspace
 Workspace.DescendantAdded:Connect(function(child)
     scan(child, true)
 end)
