@@ -5,12 +5,10 @@ local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 
--- Clean up older GUI instances
 if CoreGui:FindFirstChild("CandyESPUI") then
     CoreGui.CandyESPUI:Destroy()
 end
 
--- Core ScreenGui Setup
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "CandyESPUI"
 screenGui.ResetOnSpawn = false
@@ -30,7 +28,6 @@ notifLayout.Padding = UDim.new(0, 6)
 notifLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
 notifLayout.Parent = notifHolder
 
--- Send On-Screen Notification
 local function notify(itemName)
     local card = Instance.new("Frame")
     card.Size = UDim2.new(1, 0, 0, 40)
@@ -61,7 +58,6 @@ local function notify(itemName)
     label.Text = "🍬 Spawned: " .. itemName
     label.Parent = card
 
-    -- Fade out & cleanup animation
     task.delay(4, function()
         local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
         local tween = TweenService:Create(card, tweenInfo, {BackgroundTransparency = 1})
@@ -74,24 +70,61 @@ local function notify(itemName)
     end)
 end
 
--- Valid Targets List
-local VALID_TARGETS = {
-    candybasket = true,
-    candybag = true,
-    candybowl = true,
-    pumpkin = true
-}
-
 local ESP_Folder = Instance.new("Folder")
 ESP_Folder.Name = "CandyESP_Folder"
 ESP_Folder.Parent = CoreGui
 
+local TrackedObjects = {}
+
+local function cleanString(str)
+    return str:lower():gsub("[%s%p]", "")
+end
+
+local function isPlayerRelated(obj)
+    local ancestor = obj
+    while ancestor and ancestor ~= Workspace do
+        if Players:GetPlayerFromCharacter(ancestor) or ancestor:IsA("Player") then
+            return true
+        end
+        ancestor = ancestor.Parent
+    end
+    return false
+end
+
+local function isCosmeticOrShop(obj)
+    local ancestor = obj
+    while ancestor and ancestor ~= Workspace do
+        local aname = ancestor.Name:lower()
+        if aname:find("shop") or aname:find("store") or aname:find("cosmetic") or 
+           aname:find("accessory") or aname:find("hat") or aname:find("display") or 
+           aname:find("merchant") or aname:find("booth") then
+            return true
+        end
+        ancestor = ancestor.Parent
+    end
+    return false
+end
+
+local function getAdorneePart(obj)
+    if obj:IsA("BasePart") then return obj end
+    if obj:IsA("Model") then
+        if obj.PrimaryPart then return obj.PrimaryPart end
+        return obj:FindFirstChildWhichIsA("BasePart", true)
+    end
+    return nil
+end
+
 local function createESP(obj, isBasket)
-    if not obj or not obj.Parent then return end
+    if TrackedObjects[obj] then return end
+    
+    local targetPart = getAdorneePart(obj)
+    if not targetPart then return end
+    
+    TrackedObjects[obj] = true
 
     local bb = Instance.new("BillboardGui")
     bb.Name = "ESP_" .. obj.Name
-    bb.Adornee = obj
+    bb.Adornee = targetPart
     bb.AlwaysOnTop = true
     bb.Size = UDim2.new(0, 120, 0, 45)
     bb.StudsOffset = Vector3.new(0, 3.5, 0)
@@ -127,7 +160,7 @@ local function createESP(obj, isBasket)
         blackGradient.Rotation = 90
         blackGradient.Parent = frame
     else
-        -- Rainbow Gradient for other items (CandyBag, CandyBowl, Pumpkin)
+        -- Rainbow Gradient for other items
         frame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
         label.TextColor3 = Color3.fromRGB(255, 255, 255)
 
@@ -142,7 +175,6 @@ local function createESP(obj, isBasket)
         })
         rainbowGradient.Parent = frame
 
-        -- Animate Rainbow Gradient
         task.spawn(function()
             while bb and bb.Parent do
                 rainbowGradient.Rotation = (rainbowGradient.Rotation + 4) % 360
@@ -151,35 +183,53 @@ local function createESP(obj, isBasket)
         end)
     end
 
-    -- Automatically remove ESP when target is despawned/collected
     obj.AncestryChanged:Connect(function(_, parent)
         if not parent then
+            TrackedObjects[obj] = nil
             bb:Destroy()
         end
     end)
 end
 
-local function scan(obj, isNewSpawn)
+local function checkAndApply(obj, isNewSpawn)
     if obj:IsA("BasePart") or obj:IsA("Model") then
-        local cleanName = obj.Name:lower():gsub("%s+", "")
+        if isPlayerRelated(obj) or isCosmeticOrShop(obj) then return end
         
-        if VALID_TARGETS[cleanName] then
-            local isBasket = (cleanName == "candybasket")
-            createESP(obj, isBasket)
+        local clean = cleanString(obj.Name)
+        
+        -- Matches candybasket, candybag, candybowl, pumpkin regardless of spacing/case
+        if clean:find("candybasket") or clean:find("candybag") or clean:find("candybowl") or clean == "pumpkin" then
+            
+            -- Wait up to 1 second for ProximityPrompt to register if it loads dynamically
+            local prompt = obj:FindFirstChildOfClass("ProximityPrompt", true)
+            if not prompt then
+                task.wait(0.5)
+                prompt = obj:FindFirstChildOfClass("ProximityPrompt", true)
+            end
 
-            if isNewSpawn then
-                notify(obj.Name)
+            if prompt then
+                local actionText = (prompt.ActionText or ""):lower()
+                if actionText:find("buy") or actionText:find("equip") or actionText:find("try") or actionText:find("exchange") then
+                    return
+                end
+
+                local isBasket = clean:find("candybasket") ~= nil
+                createESP(obj, isBasket)
+
+                if isNewSpawn then
+                    notify(obj.Name)
+                end
             end
         end
     end
 end
 
--- Scan initial map items
+-- Initial map scan
 for _, obj in ipairs(Workspace:GetDescendants()) do
-    scan(obj, false)
+    task.spawn(checkAndApply, obj, false)
 end
 
--- Detect live spawns
+-- Live spawn listener
 Workspace.DescendantAdded:Connect(function(obj)
-    scan(obj, true)
+    task.spawn(checkAndApply, obj, true)
 end)
