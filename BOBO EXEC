@@ -45,17 +45,29 @@ end)
 
 local function scan(obj)
     if obj:IsA("BasePart") or obj:IsA("Model") then
+        -- 1. Strict Ancestry Blacklist
+        local ancestor = obj
+        while ancestor and ancestor ~= Workspace do
+            local aname = ancestor.Name:lower()
+            if aname:find("spirit") or aname:find("hallow") or aname:find("shop") or aname:find("vendor") or aname:find("store") or aname:find("exchange") or aname:find("booth") or aname:find("reward") then
+                return 
+            end
+            ancestor = ancestor.Parent
+        end
+
+        -- 2. Name check for candy containers
         local n = obj.Name:lower()
         if (n:find("candy") or n:find("bowl") or n:find("basket") or n:find("bucket") or n:find("pail") or n:find("treat")) and not n:find("pumpkin") then
             local prompt = obj:FindFirstChildOfClass("ProximityPrompt", true)
             if prompt then
-                -- Check prompt text to ignore shop purchases / exchanges
+                -- 3. Prompt Action Text Filter (Blocks shops, exchanges, and rewards)
                 local actionText = (prompt.ActionText or ""):lower()
                 local objectText = (prompt.ObjectText or ""):lower()
                 
-                if actionText:find("buy") or actionText:find("purchase") or actionText:find("exchange") or 
+                if actionText:find("buy") or actionText:find("exchange") or actionText:find("trade") or 
+                   actionText:find("claim") or actionText:find("reward") or actionText:find("talk") or 
                    objectText:find("shop") or objectText:find("store") or objectText:find("token") then
-                    return 
+                    return
                 end
 
                 table.insert(TargetList, obj)
@@ -110,7 +122,8 @@ task.spawn(function()
                         humanoid:MoveTo(closestPos)
                         if shortestDist <= 8 and targetPrompt then
                             local aText = (targetPrompt.ActionText or ""):lower()
-                            if not aText:find("buy") and not aText:find("purchase") then
+                            -- Double check action text before firing prompt
+                            if not aText:find("buy") and not aText:find("exchange") and not aText:find("reward") then
                                 fireproximityprompt(targetPrompt)
                             end
                         end
