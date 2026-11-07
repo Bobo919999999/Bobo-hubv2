@@ -5,112 +5,53 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- Clean up previous instance if running
 if PlayerGui:FindFirstChild("CandyESPGui") then
     PlayerGui.CandyESPGui:Destroy()
 end
 
--- ==========================================
--- PERFORMANCE & ESP CONFIGURATION
--- ==========================================
 local Settings = {
     ESPEnabled = true,
     ShowDistance = true,
     TextSize = 12,
-    MaxDistance = 250, -- Hides ESP beyond 250 studs to save FPS
+    MaxDistance = 300,
     Color = Color3.fromRGB(255, 105, 180)
 }
-
-local ColorOptions = {
-    { Name = "Pink", Color = Color3.fromRGB(255, 105, 180) },
-    { Name = "Cyan", Color = Color3.fromRGB(0, 255, 255) },
-    { Name = "Green", Color = Color3.fromRGB(50, 255, 50) },
-    { Name = "Yellow", Color = Color3.fromRGB(255, 215, 0) }
-}
-local currentColorIndex = 1
 
 local ProcessedCandies = {}
 local ActiveBillboards = {}
 local ActiveLabels = {}
 
--- ==========================================
--- UI MENU SETUP
--- ==========================================
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "CandyESPGui"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = PlayerGui
 
-local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 200, 0, 190)
-mainFrame.Position = UDim2.new(0, 15, 0.3, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-mainFrame.BorderSizePixel = 0
-mainFrame.Active = true
-mainFrame.Draggable = true
-mainFrame.Parent = screenGui
+-- Simple toggle button to confirm UI loads
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(0, 120, 0, 35)
+toggleButton.Position = UDim2.new(0, 15, 0.3, 0)
+toggleButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+toggleButton.TextColor3 = Color3.fromRGB(255, 105, 180)
+toggleButton.Font = Enum.Font.SourceSansBold
+toggleButton.TextSize = 14
+toggleButton.Text = "🍬 ESP: ON"
+toggleButton.Parent = screenGui
 
-local mainCorner = Instance.new("UICorner")
-mainCorner.CornerRadius = UDim.new(0, 6)
-mainCorner.Parent = mainFrame
-
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 0, 30)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "⚡ High FPS Candy ESP"
-titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.Font = Enum.Font.SourceSansBold
-titleLabel.TextSize = 14
-titleLabel.Parent = mainFrame
-
-local function createButton(name, text, posY)
-    local btn = Instance.new("TextButton")
-    btn.Name = name
-    btn.Size = UDim2.new(0.9, 0, 0, 30)
-    btn.Position = UDim2.new(0.05, 0, 0, posY)
-    btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-    btn.TextColor3 = Color3.fromRGB(230, 230, 230)
-    btn.Font = Enum.Font.SourceSans
-    btn.TextSize = 13
-    btn.Text = text
-    btn.Parent = mainFrame
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 4)
-    corner.Parent = btn
-    return btn
-end
-
-local toggleESPBtn = createButton("ToggleESP", "ESP: ON", 35)
-local toggleDistBtn = createButton("ToggleDist", "Distance: ON", 72)
-local colorBtn = createButton("ChangeColor", "Color: Pink", 109)
-local sizeBtn = createButton("ChangeSize", "Text Size: 12", 146)
-
--- ==========================================
--- OPTIMIZED ESP ENGINE
--- ==========================================
-local function updateVisuals()
-    for candy, billboard in pairs(ActiveBillboards) do
-        if billboard and billboard.Parent then
-            billboard.Enabled = Settings.ESPEnabled
-        end
+toggleButton.MouseButton1Click:Connect(function()
+    Settings.ESPEnabled = not Settings.ESPEnabled
+    toggleButton.Text = Settings.ESPEnabled and "🍬 ESP: ON" or "🍬 ESP: OFF"
+    for _, billboard in pairs(ActiveBillboards) do
+        if billboard then billboard.Enabled = Settings.ESPEnabled end
     end
-    for candy, label in pairs(ActiveLabels) do
-        if label and label.Parent then
-            label.TextColor3 = Settings.Color
-            label.TextSize = Settings.TextSize
-        end
-    end
-end
+end)
 
-local function createCandyESP(candy)
-    if not candy or ProcessedCandies[candy] then return end
-    ProcessedCandies[candy] = true
+local function createESP(target)
+    if not target or ProcessedCandies[target] then return end
+    ProcessedCandies[target] = true
 
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "CandyBillboard"
-    billboard.Adornee = candy
+    billboard.Adornee = target
     billboard.Size = UDim2.new(0, 120, 0, 35)
     billboard.StudsOffset = Vector3.new(0, 2, 0)
     billboard.AlwaysOnTop = true
@@ -124,16 +65,57 @@ local function createCandyESP(candy)
     label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
     label.Font = Enum.Font.SourceSansBold
     label.TextSize = Settings.TextSize
-    label.Text = "🍬 " .. candy.Name
+    label.Text = "🍬 " .. target.Name
     label.Parent = billboard
 
-    billboard.Parent = candy
-    ActiveBillboards[candy] = billboard
-    ActiveLabels[candy] = label
+    billboard.Parent = target
+    ActiveBillboards[target] = billboard
+    ActiveLabels[target] = label
 
-    -- FPS Optimization: Throttle distance calculations to run every 3rd frame
-    local frameCounter = 0
     local connection
     connection = RunService.RenderStepped:Connect(function()
-        frameCounter = frameCounter + 1
-        if frameCounter % 3 ~= 
+        if not target or not target.Parent or not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            if billboard then billboard:Destroy() end
+            if connection then connection:Disconnect() end
+            ProcessedCandies[target] = nil
+            ActiveBillboards[target] = nil
+            ActiveLabels[target] = nil
+            return
+        end
+
+        if not Settings.ESPEnabled then return end
+
+        local hrp = LocalPlayer.Character.HumanoidRootPart
+        local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.Position or target:GetPivot().Position) or target.Position
+        local dist = math.floor((hrp.Position - pos).Magnitude)
+
+        if dist > Settings.MaxDistance then
+            billboard.Enabled = false
+        else
+            billboard.Enabled = Settings.ESPEnabled
+            if Settings.ShowDistance then
+                label.Text = "🍬 " .. target.Name .. "\n[" .. dist .. "s]"
+            else
+                label.Text = "🍬 " .. target.Name
+            end
+        end
+    end)
+end
+
+local function checkObject(obj)
+    if obj:IsA("BasePart") or obj:IsA("Model") then
+        local name = obj.Name:lower()
+        -- Added more generic checks just in case
+        if name:find("candy") or name:find("sweet") or name:find("treat") or name:find("spawn") then
+            createESP(obj)
+        end
+    end
+end
+
+-- Scan descendants instead of just children (catches items inside folders)
+for _, obj in ipairs(Workspace:GetDescendants()) do
+    checkObject(obj)
+end
+
+Workspace.DescendantAdded:Connect(checkObject)
+print("Candy ESP Loaded Successfully!")
