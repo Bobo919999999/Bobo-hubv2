@@ -174,7 +174,6 @@ local function createESP(target, isNewSpawn)
         RainbowLabels[label] = nil
     end
 
-    -- Instant cleanup the millisecond the item is claimed/destroyed (fixes claim lag)
     ancestryConn = target.AncestryChanged:Connect(function(_, parent)
         if not parent then
             cleanup()
@@ -213,7 +212,8 @@ local function scan(obj, isNewSpawn)
         if isPlayerRelated(obj) then return end
         
         local n = obj.Name:lower()
-        if n:find("candy") or n:find("bowl") or n:find("basket") or n:find("bucket") or n:find("pail") or n:find("treat") or n:find("pumpkin") then
+        -- STRICT FILTER: Only targets candy bowls/baskets/buckets/treats, and explicitly EXCLUDES pumpkins
+        if (n:find("candy") or n:find("bowl") or n:find("basket") or n:find("bucket") or n:find("pail") or n:find("treat")) and not n:find("pumpkin") then
             createESP(obj, isNewSpawn)
         end
     end
