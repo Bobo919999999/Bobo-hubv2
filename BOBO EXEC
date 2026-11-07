@@ -29,7 +29,7 @@ screenGui.Name = "CleanESP"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = PlayerGui
 
--- Notification Banner at top center
+-- Notification Banner
 local notifyLabel = Instance.new("TextLabel")
 notifyLabel.Size = UDim2.new(0, 280, 0, 40)
 notifyLabel.Position = UDim2.new(0.5, -140, 0.08, 0)
@@ -53,7 +53,7 @@ local function showNotification(itemName)
     end)
 end
 
--- Control Panel pinned safely in the middle-left
+-- Control Panel
 local mainFrame = Instance.new("Frame")
 mainFrame.Size = UDim2.new(0, 140, 0, 90)
 mainFrame.Position = UDim2.new(0, 20, 0.4, 0)
@@ -114,6 +114,28 @@ local function isPlayerRelated(obj)
         end
         ancestor = ancestor.Parent
     end
+    return false
+end
+
+-- Checks if an object is an interactive/collectible spawn vs a static map prop
+local function isCollectible(obj)
+    -- Ignore items inside shop/map/cosmetics folders
+    local parentName = obj.Parent and obj.Parent.Name:lower() or ""
+    if parentName:find("shop") or parentName:find("cosmetic") or parentName:find("map") or parentName:find("display") then
+        return false
+    end
+    
+    -- Check if it contains a ProximityPrompt, TouchInterest (TouchTransmitter), or ClickDetector
+    if obj:FindFirstChildOfClass("ProximityPrompt") or obj:FindFirstChildOfClass("TouchTransmitter") or obj:FindFirstChildOfClass("ClickDetector") then
+        return true
+    end
+    
+    for _, child in ipairs(obj:GetChildren()) do
+        if child:IsA("ProximityPrompt") or child:IsA("TouchTransmitter") or child:IsA("ClickDetector") then
+            return true
+        end
+    end
+
     return false
 end
 
@@ -212,9 +234,11 @@ local function scan(obj, isNewSpawn)
         if isPlayerRelated(obj) then return end
         
         local n = obj.Name:lower()
-        -- STRICT FILTER: Only targets candy bowls/baskets/buckets/treats, and explicitly EXCLUDES pumpkins
+        -- Target candy containers while verifying interactable status & ignoring pumpkins
         if (n:find("candy") or n:find("bowl") or n:find("basket") or n:find("bucket") or n:find("pail") or n:find("treat")) and not n:find("pumpkin") then
-            createESP(obj, isNewSpawn)
+            if isCollectible(obj) then
+                createESP(obj, isNewSpawn)
+            end
         end
     end
 end
