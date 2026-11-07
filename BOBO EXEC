@@ -1,6 +1,7 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local PathfindingService = game:GetService("PathfindingService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -10,10 +11,12 @@ if PlayerGui:FindFirstChild("CleanESP") then
 end
 
 local ESPEnabled = true
+local AutoFarmEnabled = false
 local ProcessedItems = {}
 local ActiveBillboards = {}
 local ActiveLabels = {}
 local RainbowLabels = {}
+local TargetList = {}
 
 local Colors = {
     {Name = "Orange", Color = Color3.fromRGB(255, 165, 0)},
@@ -53,9 +56,9 @@ local function showNotification(itemName)
     end)
 end
 
--- Control Panel
+-- Control Panel (Expanded height to fit Auto-Walk button)
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 140, 0, 90)
+mainFrame.Size = UDim2.new(0, 140, 0, 122)
 mainFrame.Position = UDim2.new(0, 20, 0.4, 0)
 mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 mainFrame.BorderSizePixel = 0
@@ -87,9 +90,19 @@ toggleBtn.TextSize = 13
 toggleBtn.Text = "🍬 ESP: ON"
 toggleBtn.Parent = mainFrame
 
+local autofarmBtn = Instance.new("TextButton")
+autofarmBtn.Size = UDim2.new(0.9, 0, 0, 28)
+autofarmBtn.Position = UDim2.new(0.05, 0, 0, 56)
+autofarmBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+autofarmBtn.TextColor3 = Color3.fromRGB(150, 150, 255)
+autofarmBtn.Font = Enum.Font.SourceSansBold
+autofarmBtn.TextSize = 13
+autofarmBtn.Text = "🚶 Auto-Walk: OFF"
+autofarmBtn.Parent = mainFrame
+
 local colorBtn = Instance.new("TextButton")
 colorBtn.Size = UDim2.new(0.9, 0, 0, 28)
-colorBtn.Position = UDim2.new(0.05, 0, 0, 56)
+colorBtn.Position = UDim2.new(0.05, 0, 0, 88)
 colorBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 colorBtn.TextColor3 = Colors[currentColorIndex].Color
 colorBtn.Font = Enum.Font.SourceSansBold
@@ -117,15 +130,12 @@ local function isPlayerRelated(obj)
     return false
 end
 
--- Checks if an object is an interactive/collectible spawn vs a static map prop
 local function isCollectible(obj)
-    -- Ignore items inside shop/map/cosmetics folders
     local parentName = obj.Parent and obj.Parent.Name:lower() or ""
     if parentName:find("shop") or parentName:find("cosmetic") or parentName:find("map") or parentName:find("display") then
         return false
     end
     
-    -- Check if it contains a ProximityPrompt, TouchInterest (TouchTransmitter), or ClickDetector
     if obj:FindFirstChildOfClass("ProximityPrompt") or obj:FindFirstChildOfClass("TouchTransmitter") or obj:FindFirstChildOfClass("ClickDetector") then
         return true
     end
@@ -144,6 +154,7 @@ local function createESP(target, isNewSpawn)
     if isPlayerRelated(target) then return end
 
     ProcessedItems[target] = true
+    table.insert(TargetList, target)
 
     if isNewSpawn then
         showNotification(target.Name)
@@ -194,6 +205,12 @@ local function createESP(target, isNewSpawn)
         ActiveBillboards[target] = nil
         ActiveLabels[target] = nil
         RainbowLabels[label] = nil
+        for i, v in ipairs(TargetList) do
+            if v == target then
+                table.remove(TargetList, i)
+                break
+            end
+        end
     end
 
     ancestryConn = target.AncestryChanged:Connect(function(_, parent)
@@ -234,7 +251,6 @@ local function scan(obj, isNewSpawn)
         if isPlayerRelated(obj) then return end
         
         local n = obj.Name:lower()
-        -- Target candy containers while verifying interactable status & ignoring pumpkins
         if (n:find("candy") or n:find("bowl") or n:find("basket") or n:find("bucket") or n:find("pail") or n:find("treat")) and not n:find("pumpkin") then
             if isCollectible(obj) then
                 createESP(obj, isNewSpawn)
@@ -242,6 +258,35 @@ local function scan(obj, isNewSpawn)
         end
     end
 end
+
+-- Auto-walk Loop
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if AutoFarmEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = LocalPlayer.Character.HumanoidRootPart
+            local humanoid = LocalPlayer.Character.Humanoid
+            
+            local closestTarget = nil
+            local shortestDist = math.huge
+
+            for _, target in ipairs(TargetList) do
+                if target and target.Parent then
+                    local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.Position or target:GetPivot().Position) or target.Position
+                    local dist = (hrp.Position - pos).Magnitude
+                    if dist < shortestDist then
+                        shortestDist = dist
+                        closestTarget = pos
+                    end
+                end
+            end
+
+            if closestTarget then
+                humanoid:MoveTo(closestTarget)
+            end
+        end
+    end
+end)
 
 toggleBtn.MouseButton1Click:Connect(function()
     ESPEnabled = not ESPEnabled
@@ -251,12 +296,17 @@ toggleBtn.MouseButton1Click:Connect(function()
     end
 end)
 
+autofarmBtn.MouseButton1Click:Connect(function()
+    AutoFarmEnabled = not AutoFarmEnabled
+    autofarmBtn.Text = AutoFarmEnabled and "🚶 Auto-Walk: ON" or "🚶 Auto-Walk: OFF"
+    autofarmBtn.TextColor3 = AutoFarmEnabled and Color3.fromRGB(50, 255, 50) or Color3.fromRGB(150, 150, 255)
+end)
+
 colorBtn.MouseButton1Click:Connect(function()
     currentColorIndex = (currentColorIndex % #Colors) + 1
     local choice = Colors[currentColorIndex]
     colorBtn.Text = "🎨 Color: " .. choice.Name
     colorBtn.TextColor3 = choice.Color
-    toggleBtn.TextColor3 = choice.Color
     updateAllColors()
 end)
 
