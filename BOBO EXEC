@@ -1,7 +1,6 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
-local PathfindingService = game:GetService("PathfindingService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -56,7 +55,7 @@ local function showNotification(itemName)
     end)
 end
 
--- Control Panel (Expanded height to fit Auto-Walk button)
+-- Control Panel
 local mainFrame = Instance.new("Frame")
 mainFrame.Size = UDim2.new(0, 140, 0, 122)
 mainFrame.Position = UDim2.new(0, 20, 0.4, 0)
@@ -259,31 +258,36 @@ local function scan(obj, isNewSpawn)
     end
 end
 
--- Auto-walk Loop
+-- Robust Auto-walk Loop
 task.spawn(function()
     while true do
-        task.wait(0.5)
-        if AutoFarmEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            local hrp = LocalPlayer.Character.HumanoidRootPart
-            local humanoid = LocalPlayer.Character.Humanoid
-            
-            local closestTarget = nil
-            local shortestDist = math.huge
+        task.wait(0.2)
+        if AutoFarmEnabled then
+            pcall(function()
+                local char = LocalPlayer.Character
+                if char and char:FindFirstChild("Humanoid") and char:FindFirstChild("HumanoidRootPart") then
+                    local hrp = char.HumanoidRootPart
+                    local humanoid = char.Humanoid
+                    
+                    local closestTarget = nil
+                    local shortestDist = math.huge
 
-            for _, target in ipairs(TargetList) do
-                if target and target.Parent then
-                    local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.Position or target:GetPivot().Position) or target.Position
-                    local dist = (hrp.Position - pos).Magnitude
-                    if dist < shortestDist then
-                        shortestDist = dist
-                        closestTarget = pos
+                    for _, target in ipairs(TargetList) do
+                        if target and target.Parent then
+                            local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.Position or target:GetPivot().Position) or target.Position
+                            local dist = (hrp.Position - pos).Magnitude
+                            if dist < shortestDist then
+                                shortestDist = dist
+                                closestTarget = pos
+                            end
+                        end
+                    end
+
+                    if closestTarget then
+                        humanoid:MoveTo(closestTarget)
                     end
                 end
-            end
-
-            if closestTarget then
-                humanoid:MoveTo(closestTarget)
-            end
+            end)
         end
     end
 end)
